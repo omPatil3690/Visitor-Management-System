@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { useAuthStore } from "../store/auth";
 import { Users, UserCheck, AlertCircle, CheckCircle, XCircle, TrendingUp, X } from "lucide-react";
 import { VisitDetailsModal } from "./VisitDetailsModal";
+import { Visit } from "./VisitDetailsModal";
 
 type StatItem = {
   name: string;
@@ -28,6 +29,7 @@ export function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string>("");
   const [connectionTested, setConnectionTested] = useState(false);
+  const [selectedVisits, setSelectedVisits] = useState<Visit[]>([]);
 
   useEffect(() => {
     if (!user?.role) return;
@@ -79,6 +81,17 @@ export function Dashboard() {
       supabase.removeChannel(subscription);
     };
   }, [user?.role, connectionTested]);
+
+  const getDateRange = () => {
+    const now = new Date();
+    const todayStart = new Date(now.setHours(0, 0, 0, 0)).toISOString();
+    const todayEnd = new Date(now.setHours(23, 59, 59, 999)).toISOString();
+    return { todayStart, todayEnd };
+  };
+
+  const handleStatusChange = () => {
+    fetchStats(user?.role || "");
+  };
 
   const fetchStats = async (role: string) => {
     console.log(`Fetching stats for role: ${role}`);
@@ -471,9 +484,39 @@ export function Dashboard() {
     }
   };
 
-  const handleStatCardClick = (status: string) => {
+  const handleStatCardClick = async (status: string) => {
     setSelectedStatus(status);
-    setIsModalOpen(true);
+    try {
+      const { todayStart, todayEnd } = getDateRange();
+      let query = supabase
+        .from("visits")
+        .select(`
+          *,
+          visitors:visitor_id (name),
+          hosts:host_id (name)
+        `)
+        .eq("status", status);
+
+      if (status === "pending") {
+        query = query.gte("created_at", todayStart).lte("created_at", todayEnd);
+      } else if (status === "approved") {
+        query = query.or(`and(approved_at.gte.${todayStart},approved_at.lte.${todayEnd}),approved_at.is.null`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      
+      const transformedData = data?.map(visit => ({
+        ...visit,
+        visitor_name: visit.visitors?.name || 'Unknown Visitor',
+        host_name: visit.hosts?.name || 'Unknown Host'
+      })) || [];
+      
+      setSelectedVisits(transformedData);
+      setIsModalOpen(true);
+    } catch (error) {
+      console.error("Error fetching visits:", error);
+    }
   };
 
   return (
@@ -529,6 +572,8 @@ export function Dashboard() {
         onClose={() => setIsModalOpen(false)}
         userRole={user?.role}
         userId={user?.id}
+        visits={selectedVisits}
+        onStatusChange={handleStatusChange}
       />
     </div>
   );

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { X } from "lucide-react";
+import { X, Check, Ban, Clock, CheckCircle, XCircle } from "lucide-react";
 
-type Visit = {
+export type Visit = {
   id: string;
   visitor_name: string;
   host_name: string;
@@ -10,9 +10,10 @@ type Visit = {
   status: string;
   check_in_time?: string;
   check_out_time?: string;
-  valid_until?: string;
   created_at: string;
   approved_at?: string;
+  visitors?: { name: string };
+  hosts?: { name: string };
 };
 
 type VisitDetailsModalProps = {
@@ -21,98 +22,59 @@ type VisitDetailsModalProps = {
   onClose: () => void;
   userRole?: string;
   userId?: string;
+  visits: Visit[];
+  onStatusChange: () => void;
 };
 
-export function VisitDetailsModal({ 
-  status, 
-  isOpen, 
+export function VisitDetailsModal({
+  status,
+  isOpen,
   onClose,
   userRole,
-  userId
+  userId,
+  visits,
+  onStatusChange
 }: VisitDetailsModalProps) {
-  const [visits, setVisits] = useState<Visit[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [currentVisit, setCurrentVisit] = useState<Visit | null>(null);
+  const [actionType, setActionType] = useState<"approve" | "deny" | "complete" | null>(null);
 
-  useEffect(() => {
-    if (isOpen && status) {
-      fetchVisitsByStatus(status);
-    }
-  }, [isOpen, status, userRole, userId]);
-
-  const fetchVisitsByStatus = async (status: string) => {
+  const handleStatusUpdate = async (visit: Visit, newStatus: string) => {
     setLoading(true);
+    setCurrentVisit(visit);
+    setActionType(
+      newStatus === "approved" ? "approve" :
+      newStatus === "denied" ? "deny" :
+      newStatus === "completed" ? "complete" : null
+    );
+
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      
-      const utcTodayStart = today.toISOString();
-      const utcTomorrowStart = tomorrow.toISOString();
-      
-      let query = supabase
+      const updates = {
+        status: newStatus,
+        ...(newStatus === "approved" && { approved_at: new Date().toISOString() }),
+        ...(newStatus === "completed" && { check_out_time: new Date().toISOString() })
+      };
+
+      const { error } = await supabase
         .from("visits")
-        .select(`
-          id,
-          visitor_name,
-          host_name,
-          purpose,
-          status,
-          check_in_time,
-          check_out_time,
-          valid_until,
-          created_at,
-          approved_at
-        `)
-        .eq("status", status);
+        .update(updates)
+        .eq("id", visit.id);
 
-      if (userRole === "resident") {
-        query = query.eq("host_id", userId);
-      } else if (userRole === "visitor") {
-        query = query.eq("visitor_id", userId);
-      }
-
-      switch (status) {
-        case "pending":
-          query = query
-            .gte("created_at", utcTodayStart)
-            .lt("created_at", utcTomorrowStart);
-          break;
-        case "approved":
-          query = query
-            .gte("approved_at", utcTodayStart)
-            .lt("approved_at", utcTomorrowStart);
-          break;
-        case "completed":
-          query = query
-            .gte("check_out_time", utcTodayStart)
-            .lt("check_out_time", utcTomorrowStart);
-          break;
-        case "cancelled":
-          // No date filter for cancelled as we don't have cancelled_at
-          break;
-      }
-      
-      const { data, error } = await query;
-      
       if (error) throw error;
-      setVisits(data || []);
-    } catch (err) {
-      console.error("Error fetching visits:", err);
+
+      onStatusChange();
+    } catch (error) {
+      console.error("Error updating visit status:", error);
     } finally {
       setLoading(false);
+      setCurrentVisit(null);
+      setActionType(null);
     }
-  };
-
-  const formatTime = (dateString?: string) => {
-    if (!dateString) return "N/A";
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case "pending": return "New Request";
+      case "pending": return "Pending";
       case "approved": return "Approved";
       case "completed": return "Completed";
       case "cancelled": return "Cancelled";
@@ -132,11 +94,16 @@ export function VisitDetailsModal({
     }
   };
 
+  const formatDateTime = (dateString?: string) => {
+    if (!dateString) return "N/A";
+    return new Date(dateString).toLocaleString();
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-xl font-semibold">
             {getStatusLabel(status)} Visits - Today
@@ -152,44 +119,100 @@ export function VisitDetailsModal({
         </div>
         
         <div className="flex-1 overflow-auto p-4">
-          {loading ? (
-            <div className="flex justify-center p-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-            </div>
-          ) : visits.length === 0 ? (
+          {visits.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               No {status} visits found for today.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
-                <thead>
+                <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Visitor</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Host</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Purpose</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Visitor</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Host</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Purpose</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested At</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Approved At</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {visits.map((visit) => (
                     <tr key={visit.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 whitespace-nowrap text-sm">{visit.visitor_name}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm">{visit.host_name}</td>
-                      <td className="px-4 py-3 text-sm">{visit.purpose}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm">
-                        {formatTime(
-                          visit.status === "pending" ? visit.created_at : 
-                          visit.status === "approved" ? visit.approved_at :
-                          visit.status === "completed" ? visit.check_out_time : 
-                          visit.created_at
-                        )}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {visit.visitor_name || (visit.visitors?.name ?? 'Unknown Visitor')}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {visit.host_name || (visit.hosts?.name ?? 'Unknown Host')}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                        {visit.purpose}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(visit.status)}`}>
                           {getStatusLabel(visit.status)}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDateTime(visit.created_at)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {visit.approved_at ? formatDateTime(visit.approved_at) : "N/A"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        {userRole === "admin" && (
+                          <div className="flex space-x-2">
+                            {visit.status === "pending" && (
+                              <>
+                                <button
+                                  onClick={() => handleStatusUpdate(visit, "approved")}
+                                  disabled={loading && currentVisit?.id === visit.id && actionType === "approve"}
+                                  className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                                >
+                                  {loading && currentVisit?.id === visit.id && actionType === "approve" ? (
+                                    <span className="animate-spin">↻</span>
+                                  ) : (
+                                    <>
+                                      <Check className="w-3 h-3 mr-1" />
+                                      Approve
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => handleStatusUpdate(visit, "denied")}
+                                  disabled={loading && currentVisit?.id === visit.id && actionType === "deny"}
+                                  className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                                >
+                                  {loading && currentVisit?.id === visit.id && actionType === "deny" ? (
+                                    <span className="animate-spin">↻</span>
+                                  ) : (
+                                    <>
+                                      <Ban className="w-3 h-3 mr-1" />
+                                      Deny
+                                    </>
+                                  )}
+                                </button>
+                              </>
+                            )}
+                            {visit.status === "approved" && (
+                              <button
+                                onClick={() => handleStatusUpdate(visit, "completed")}
+                                disabled={loading && currentVisit?.id === visit.id && actionType === "complete"}
+                                className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                              >
+                                {loading && currentVisit?.id === visit.id && actionType === "complete" ? (
+                                  <span className="animate-spin">↻</span>
+                                ) : (
+                                  <>
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    Complete
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
