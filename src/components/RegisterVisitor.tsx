@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
 import { Camera } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
+// import QRCode from 'qrcode';
+import QRCode from 'react-qr-code';
+import emailjs from '@emailjs/browser';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase - replace with your actual credentials
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 interface VisitorFormData {
   name: string;
@@ -23,6 +33,17 @@ export function RegisterVisitor() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, files } = e.target;
+    
+    if (type === 'file' && files) {
+      setFormData(prev => ({ ...prev, photo: files[0] }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,11 +52,97 @@ export function RegisterVisitor() {
     setSuccess(false);
 
     try {
-      // TODO: Replace with actual API endpoint
-      // Simulating API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 1. Generate a unique ID for the visit
+      const visitId = uuidv4();
       
-      console.log('Form submitted:', formData);
+      // 2. Insert visitor data into Supabase
+      const { data: insertedData, error: dbError } = await supabase
+        .from('visitors')
+        .insert([
+          {
+            id: visitId,
+            name: formData.name,
+            email: formData.email,
+            phone: formData.phone,
+            purpose: formData.purpose,
+            host_email: formData.hostEmail,
+            valid_until: formData.validUntil,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+          },
+        ])
+        .select()
+        .single();
+
+      if (dbError) {
+        throw new Error(dbError.message || 'Failed to insert visitor data');
+      }
+      
+      // 3. Upload photo if provided
+      if (formData.photo) {
+        const { error: uploadError } = await supabase
+          .storage
+          .from('visitor-photos')
+          .upload(`${visitId}.jpg`, formData.photo, {
+            cacheControl: '3600',
+            upsert: false
+          });
+          
+        if (uploadError) {
+          console.error('Error uploading photo:', uploadError);
+          // Continue with the process even if photo upload fails
+        }
+      }
+      
+      // 4. Generate QR code with visit info
+      const qrData = JSON.stringify({
+        visitId,
+        name: formData.name,
+        email: formData.email,
+        purpose: formData.purpose,
+        validUntil: formData.validUntil
+      });
+      // @ts-ignore
+      const qrUrl = await QRCode.toDataURL(qrData);
+      setQrImageUrl(qrUrl);
+      
+      // 5. Send email with QR code
+      const emailResult = await emailjs.send(
+        'service_tmagvgd', // Your EmailJS service ID
+        'template_c4a4dpu', // Your EmailJS template ID
+        {
+          to_name: formData.name,
+          to_email: formData.email,
+          qr_code: qrUrl,
+          visit_id: visitId,
+          visit_purpose: formData.purpose,
+          host_email: formData.hostEmail,
+          valid_until: new Date(formData.validUntil).toLocaleString(),
+        },
+        'ApAlChy6Mq77wiEue' // Your EmailJS user ID
+      );
+
+      if (emailResult.status !== 200) {
+        throw new Error('Failed to send email');
+      }
+      
+      // 6. Update visitor status to "email_sent"
+      const { error: updateError } = await supabase
+        .from('visitors')
+        .update({ status: 'email_sent' })
+        .eq('id', visitId);
+        
+      if (updateError) {
+        console.error('Error updating visitor status:', updateError);
+        // Continue even if status update fails
+      }
+      
+      console.log('Registration complete:', {
+        visitor: insertedData,
+        qrGenerated: true,
+        emailSent: true
+      });
+      
       setSuccess(true);
       setFormData({
         name: '',
@@ -46,19 +153,10 @@ export function RegisterVisitor() {
         validUntil: '',
       });
     } catch (err) {
-      setError('Failed to register visitor. Please try again.');
+      console.error('Registration error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to register visitor. Please try again.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type, files } = e.target;
-    
-    if (type === 'file' && files) {
-      setFormData(prev => ({ ...prev, photo: files[0] }));
-    } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
     }
   };
 
@@ -88,10 +186,19 @@ export function RegisterVisitor() {
                       </div>
                       <div className="ml-3">
                         <p className="text-sm font-medium text-green-800">
-                          Visitor registration successful!
+                          Visitor registration successful! An email with QR code has been sent to the visitor.
                         </p>
                       </div>
                     </div>
+                    
+                    {qrImageUrl && (
+                      <div className="mt-4 flex justify-center">
+                        <div className="p-2 bg-white border rounded-md shadow-sm">
+                          <img src={qrImageUrl} alt="Visitor QR Code" className="w-32 h-32" />
+                          <p className="mt-2 text-xs text-center text-gray-500">QR Code for visitor</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -220,7 +327,6 @@ export function RegisterVisitor() {
                             name="photo" 
                             type="file" 
                             accept="image/*"
-                            required
                             className="sr-only"
                             onChange={handleChange}
                           />
