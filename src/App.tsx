@@ -21,7 +21,6 @@ import { useAuthStore } from "./store/auth";
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
 
-  console.log("🔍 Auth State →", { isAuthenticated, isLoading });
 
   if (isLoading) {
     return <div className="loading">🔄 Loading authentication...</div>;
@@ -36,7 +35,7 @@ function App() {
   const [authInitialized, setAuthInitialized] = useState(false);
 
   useEffect(() => {
-    console.log("🔄 Initializing authentication...");
+    console.log("🔄 Initializing authentication... dfgb");
     initializeAuth().finally(() => {
       setAuthInitialized(true);
     });
