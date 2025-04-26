@@ -20,12 +20,12 @@ const Home = () => {
 
     return (
         <div className="min-h-screen flex flex-col scroll-smooth">
-            {/* ✅ NAVBAR */}
+            { }
             <nav
                 className={`w-full flex items-center justify-between px-6 py-4 fixed top-0 z-50 transition-all duration-300 ${scrolled ? "bg-white shadow-md" : "bg-white bg-opacity-80 backdrop-blur"
                     }`}
             >
-                {/* Left - Icon */}
+                { }
                 <div
                     className="flex items-center gap-2 cursor-pointer"
                     onClick={() => navigate("/")}
@@ -33,12 +33,12 @@ const Home = () => {
                     <img src="/visitor-management.png" alt="Logo" className="h-8 w-8" />
                 </div>
 
-                {/* Center - Title */}
+                { }
                 <div className="text-xl md:text-2xl font-bold text-sky-800">
                     Visitor Management System
                 </div>
 
-                {/* Right - Login Button */}
+                { }
                 <div>
                     <button
                         onClick={() => navigate("/login")}
@@ -49,7 +49,7 @@ const Home = () => {
                 </div>
             </nav>
 
-            {/* ✅ HERO SECTION */}
+            { }
             <div
                 className="min-h-[80vh] flex items-center justify-center bg-cover bg-center px-6 pt-24 pb-10"
                 style={{
@@ -73,10 +73,10 @@ const Home = () => {
                 </div>
             </div>
 
-            {/* ✅ FEATURES SECTION */}
+            { }
             <section className="py-16 bg-gray-100">
                 <div className="max-w-6xl mx-auto px-6 grid gap-8 md:grid-cols-3 text-center">
-                    {/* Feature 1 */}
+                    { }
                     <div className="bg-white p-6 rounded-lg shadow-lg hover:shadow-2xl transition duration-300">
                         <div className="flex justify-center text-sky-600 mb-4">
                             <ShieldCheck size={48} />
@@ -85,7 +85,7 @@ const Home = () => {
                         <p className="text-gray-600">Ensure only authorized visitors gain access.</p>
                     </div>
 
-                    {/* Feature 2 */}
+                    { }
                     <div className="bg-white p-6 rounded-lg shadow-lg hover:shadow-2xl transition duration-300">
                         <div className="flex justify-center text-sky-600 mb-4">
                             <ClipboardList size={48} />
@@ -94,7 +94,7 @@ const Home = () => {
                         <p className="text-gray-600">Quick and intuitive visitor registration process.</p>
                     </div>
 
-                    {/* Feature 3 */}
+                    { }
                     <div className="bg-white p-6 rounded-lg shadow-lg hover:shadow-2xl transition duration-300">
                         <div className="flex justify-center text-sky-600 mb-4">
                             <BarChart2 size={48} />
@@ -105,7 +105,7 @@ const Home = () => {
                 </div>
             </section>
 
-            {/* ✅ FOOTER */}
+            { }
             <footer className="bg-sky-700 text-white py-4 text-center">
                 &copy; {new Date().getFullYear()} Visitor Management System. All rights reserved.
             </footer>
