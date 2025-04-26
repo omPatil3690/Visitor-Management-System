@@ -17,11 +17,9 @@ import { UserManagement } from "./components/UserManagement";
 import { VisitLogs } from "./components/VisitLogs";
 import { VisitorRegistration } from "./components/VisitorRegistration";
 import { useAuthStore } from "./store/auth";
+import Home from "./components/Home";
 
-import Home from './components/Home'; // ✅ Moved to pages (clean structure)
 
-
-// ✅ Private Route Component
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
 
@@ -32,7 +30,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
 }
 
-// ✅ Main App Component
+
 function App() {
   const initializeAuth = useAuthStore((state) => state.initialize);
   const [authInitialized, setAuthInitialized] = useState(false);
@@ -50,12 +48,12 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* ✅ Public Routes */}
-        <Route path="/" element={<Home />} /> {/* ✅ Home route added */}
+        {/* Public Routes */}
+        <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/display" element={<PublicDisplay />} />
 
-        {/* ✅ Protected Routes */}
+        {/* Private Routes */}
         <Route
           path="/dashboard"
           element={
@@ -74,6 +72,8 @@ function App() {
       </Routes>
       <Toaster />
     </Router>
+
+
   );
 }
 
