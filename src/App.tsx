@@ -36,6 +36,7 @@ function App() {
   const [authInitialized, setAuthInitialized] = useState(false);
 
   useEffect(() => {
+    console.log("🔄 Initializing authentication... dfgb");
     initializeAuth().finally(() => {
       setAuthInitialized(true);
     });
