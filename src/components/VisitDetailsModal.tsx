@@ -34,26 +34,36 @@ export function VisitDetailsModal({
   userRole,
   userId,
   visits,
-  onStatusChange
+  onStatusChange,
 }: VisitDetailsModalProps) {
   const [loading, setLoading] = useState(false);
   const [currentVisit, setCurrentVisit] = useState<Visit | null>(null);
-  const [actionType, setActionType] = useState<"approve" | "deny" | "complete" | null>(null);
+  const [actionType, setActionType] = useState<
+    "approve" | "deny" | "complete" | null
+  >(null);
 
   const handleStatusUpdate = async (visit: Visit, newStatus: string) => {
     setLoading(true);
     setCurrentVisit(visit);
     setActionType(
-      newStatus === "approved" ? "approve" :
-      newStatus === "denied" ? "deny" :
-      newStatus === "completed" ? "complete" : null
+      newStatus === "approved"
+        ? "approve"
+        : newStatus === "denied"
+        ? "deny"
+        : newStatus === "completed"
+        ? "complete"
+        : null
     );
 
     try {
       const updates = {
         status: newStatus,
-        ...(newStatus === "approved" && { approved_at: new Date().toISOString() }),
-        ...(newStatus === "completed" && { check_out_time: new Date().toISOString() })
+        ...(newStatus === "approved" && {
+          approved_at: new Date().toISOString(),
+        }),
+        ...(newStatus === "completed" && {
+          check_out_time: new Date().toISOString(),
+        }),
       };
 
       const { error } = await supabase
@@ -75,23 +85,35 @@ export function VisitDetailsModal({
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case "pending": return "Pending";
-      case "approved": return "Approved";
-      case "completed": return "Completed";
-      case "cancelled": return "Cancelled";
-      case "denied": return "Denied";
-      default: return status;
+      case "pending":
+        return "Pending";
+      case "approved":
+        return "Approved";
+      case "completed":
+        return "Completed";
+      case "cancelled":
+        return "Cancelled";
+      case "denied":
+        return "Denied";
+      default:
+        return status;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "pending": return "text-yellow-600 bg-yellow-50";
-      case "approved": return "text-green-600 bg-green-50";
-      case "completed": return "text-indigo-600 bg-indigo-50";
-      case "cancelled": return "text-red-600 bg-red-50";
-      case "denied": return "text-red-600 bg-red-50";
-      default: return "text-gray-600 bg-gray-50";
+      case "pending":
+        return "text-yellow-600 bg-yellow-50";
+      case "approved":
+        return "text-green-600 bg-green-50";
+      case "completed":
+        return "text-indigo-600 bg-indigo-50";
+      case "cancelled":
+        return "text-red-600 bg-red-50";
+      case "denied":
+        return "text-red-600 bg-red-50";
+      default:
+        return "text-gray-600 bg-gray-50";
     }
   };
 
@@ -100,10 +122,10 @@ export function VisitDetailsModal({
     return new Date(dateString).toLocaleString();
   };
 
-  // Check if the current user can perform actions on this visit
+  // Updated function to allow guards to perform actions
   const canPerformAction = (visit: Visit) => {
-    if (userRole === "admin") {
-      // Admin can perform actions on any visit
+    if (userRole === "admin" || userRole === "guard") {
+      // Admin and guards can perform actions on any visit
       return true;
     } else if (userRole === "entity" && userId) {
       // Entity can only perform actions on visits related to itself
@@ -120,9 +142,10 @@ export function VisitDetailsModal({
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-xl font-semibold">
             {getStatusLabel(status)} Visits - Today
-            {userRole && ` (${userRole.charAt(0).toUpperCase() + userRole.slice(1)})`}
+            {userRole &&
+              ` (${userRole.charAt(0).toUpperCase() + userRole.slice(1)})`}
           </h2>
-          <button 
+          <button
             onClick={onClose}
             className="p-1 rounded-full hover:bg-gray-100"
             aria-label="Close modal"
@@ -130,7 +153,7 @@ export function VisitDetailsModal({
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
         <div className="flex-1 overflow-auto p-4">
           {visits.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
@@ -141,29 +164,49 @@ export function VisitDetailsModal({
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Visitor</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Host</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Purpose</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested At</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Approved At</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Visitor
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Host
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Purpose
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Requested At
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Approved At
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {visits.map((visit) => (
                     <tr key={visit.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {visit.visitor_name || (visit.visitors?.name ?? 'Unknown Visitor')}
+                        {visit.visitor_name ||
+                          (visit.visitors?.name ?? "Unknown Visitor")}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {visit.host_name || (visit.hosts?.name ?? 'Unknown Host')}
+                        {visit.host_name ||
+                          (visit.hosts?.name ?? "Unknown Host")}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
                         {visit.purpose}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(visit.status)}`}>
+                        <span
+                          className={`px-2 py-1 text-xs rounded-full ${getStatusColor(
+                            visit.status
+                          )}`}
+                        >
                           {getStatusLabel(visit.status)}
                         </span>
                       </td>
@@ -171,19 +214,29 @@ export function VisitDetailsModal({
                         {formatDateTime(visit.created_at)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {visit.approved_at ? formatDateTime(visit.approved_at) : "N/A"}
+                        {visit.approved_at
+                          ? formatDateTime(visit.approved_at)
+                          : "N/A"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        {(userRole === "admin" || (userRole === "entity" && canPerformAction(visit))) && (
+                        {canPerformAction(visit) && (
                           <div className="flex space-x-2">
                             {visit.status === "pending" && (
                               <>
                                 <button
-                                  onClick={() => handleStatusUpdate(visit, "approved")}
-                                  disabled={loading && currentVisit?.id === visit.id && actionType === "approve"}
+                                  onClick={() =>
+                                    handleStatusUpdate(visit, "approved")
+                                  }
+                                  disabled={
+                                    loading &&
+                                    currentVisit?.id === visit.id &&
+                                    actionType === "approve"
+                                  }
                                   className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
                                 >
-                                  {loading && currentVisit?.id === visit.id && actionType === "approve" ? (
+                                  {loading &&
+                                  currentVisit?.id === visit.id &&
+                                  actionType === "approve" ? (
                                     <span className="animate-spin">↻</span>
                                   ) : (
                                     <>
@@ -193,11 +246,19 @@ export function VisitDetailsModal({
                                   )}
                                 </button>
                                 <button
-                                  onClick={() => handleStatusUpdate(visit, "denied")}
-                                  disabled={loading && currentVisit?.id === visit.id && actionType === "deny"}
+                                  onClick={() =>
+                                    handleStatusUpdate(visit, "denied")
+                                  }
+                                  disabled={
+                                    loading &&
+                                    currentVisit?.id === visit.id &&
+                                    actionType === "deny"
+                                  }
                                   className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
                                 >
-                                  {loading && currentVisit?.id === visit.id && actionType === "deny" ? (
+                                  {loading &&
+                                  currentVisit?.id === visit.id &&
+                                  actionType === "deny" ? (
                                     <span className="animate-spin">↻</span>
                                   ) : (
                                     <>
@@ -210,11 +271,19 @@ export function VisitDetailsModal({
                             )}
                             {visit.status === "approved" && (
                               <button
-                                onClick={() => handleStatusUpdate(visit, "completed")}
-                                disabled={loading && currentVisit?.id === visit.id && actionType === "complete"}
+                                onClick={() =>
+                                  handleStatusUpdate(visit, "completed")
+                                }
+                                disabled={
+                                  loading &&
+                                  currentVisit?.id === visit.id &&
+                                  actionType === "complete"
+                                }
                                 className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
                               >
-                                {loading && currentVisit?.id === visit.id && actionType === "complete" ? (
+                                {loading &&
+                                currentVisit?.id === visit.id &&
+                                actionType === "complete" ? (
                                   <span className="animate-spin">↻</span>
                                 ) : (
                                   <>
@@ -234,7 +303,7 @@ export function VisitDetailsModal({
             </div>
           )}
         </div>
-        
+
         <div className="border-t p-4 flex justify-end">
           <button
             onClick={onClose}
