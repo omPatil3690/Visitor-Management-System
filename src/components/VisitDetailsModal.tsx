@@ -14,6 +14,7 @@ export type Visit = {
   approved_at?: string;
   visitors?: { name: string };
   hosts?: { name: string };
+  entity_id?: string;
 };
 
 type VisitDetailsModalProps = {
@@ -99,6 +100,18 @@ export function VisitDetailsModal({
     return new Date(dateString).toLocaleString();
   };
 
+  // Check if the current user can perform actions on this visit
+  const canPerformAction = (visit: Visit) => {
+    if (userRole === "admin") {
+      // Admin can perform actions on any visit
+      return true;
+    } else if (userRole === "entity" && userId) {
+      // Entity can only perform actions on visits related to itself
+      return visit.entity_id === userId;
+    }
+    return false;
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -161,7 +174,7 @@ export function VisitDetailsModal({
                         {visit.approved_at ? formatDateTime(visit.approved_at) : "N/A"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        {userRole === "admin" && (
+                        {(userRole === "admin" || (userRole === "entity" && canPerformAction(visit))) && (
                           <div className="flex space-x-2">
                             {visit.status === "pending" && (
                               <>
