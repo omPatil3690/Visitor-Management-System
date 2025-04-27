@@ -19,7 +19,7 @@ export function Layout() {
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
-            
+
             {/* Logo & Home Link */}
             <Link to="/" className="flex items-center text-gray-700 hover:text-gray-900">
               <Home className="h-6 w-6" aria-hidden="true" />
@@ -40,19 +40,19 @@ export function Layout() {
             <div className="hidden sm:flex sm:items-center sm:space-x-8">
               {user?.role === 'admin' && (
                 <>
-                  <Link to="/users" className="flex items-center px-3 py-2 text-sm font-medium text-gray-900">
+                  <Link to="/dashboard/users" className="flex items-center px-3 py-2 text-sm font-medium text-gray-900">
                     <Users className="h-5 w-5 mr-1" aria-hidden="true" />
                     Users
                   </Link>
-                  <Link to="/logs" className="flex items-center px-3 py-2 text-sm font-medium text-gray-900">
+                  <Link to="/dashboard/logs" className="flex items-center px-3 py-2 text-sm font-medium text-gray-900">
                     <ClipboardList className="h-5 w-5 mr-1" aria-hidden="true" />
                     Logs
                   </Link>
                 </>
               )}
-              
+
               {user?.role === 'guard' && (
-                <Link to="/register-visitor" className="flex items-center px-3 py-2 text-sm font-medium text-gray-900">
+                <Link to="/dashboard/register-visitor" className="flex items-center px-3 py-2 text-sm font-medium text-gray-900">
                   <User className="h-5 w-5 mr-1" aria-hidden="true" />
                   Register Visitor
                 </Link>
@@ -83,16 +83,16 @@ export function Layout() {
             <div className="sm:hidden bg-white shadow-md rounded-md p-4 mt-2">
               {user?.role === 'admin' && (
                 <>
-                  <Link to="/users" className="block px-3 py-2 text-sm font-medium text-gray-900">
+                  <Link to="/dashboard/users" className="block px-3 py-2 text-sm font-medium text-gray-900">
                     Users
                   </Link>
-                  <Link to="/logs" className="block px-3 py-2 text-sm font-medium text-gray-900">
+                  <Link to="/dashboard/logs" className="block px-3 py-2 text-sm font-medium text-gray-900">
                     Logs
                   </Link>
                 </>
               )}
               {user?.role === 'guard' && (
-                <Link to="/register-visitor" className="block px-3 py-2 text-sm font-medium text-gray-900">
+                <Link to="/dashboard/register-visitor" className="block px-3 py-2 text-sm font-medium text-gray-900">
                   Register Visitor
                 </Link>
               )}

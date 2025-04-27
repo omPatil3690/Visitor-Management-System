@@ -6,6 +6,7 @@ import {
   Navigate,
 } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
+
 import { Layout } from "./components/Layout";
 import { Login } from "./components/Login";
 import { Dashboard } from "./components/Dashboard";
@@ -14,14 +15,13 @@ import { PublicDisplay } from "./components/PublicDisplay";
 import { RegisterVisitor } from "./components/RegisterVisitor";
 import { UserManagement } from "./components/UserManagement";
 import { VisitLogs } from "./components/VisitLogs";
-import { VisitorRegistration } from "./components/VisitorRegistration"; // ✅ Import the correct component
+import { VisitorRegistration } from "./components/VisitorRegistration";
 import { useAuthStore } from "./store/auth";
+import Home from "./components/Home";
 
-// ✅ Private Route (Ensures authentication before accessing pages)
+
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
-
-  console.log("🔍 Auth State →", { isAuthenticated, isLoading });
 
   if (isLoading) {
     return <div className="loading">🔄 Loading authentication...</div>;
@@ -30,13 +30,13 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
 }
 
-// ✅ Main App Component
+
 function App() {
   const initializeAuth = useAuthStore((state) => state.initialize);
   const [authInitialized, setAuthInitialized] = useState(false);
 
   useEffect(() => {
-    console.log("🔄 Initializing authentication...");
+    console.log("🔄 Initializing authentication... dfgb");
     initializeAuth().finally(() => {
       setAuthInitialized(true);
     });
@@ -49,13 +49,14 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* ✅ Public Routes */}
+        {/* Public Routes */}
+        <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/display" element={<PublicDisplay />} />
 
-        {/* ✅ Protected Routes (Requires Login) */}
+        {/* Private Routes */}
         <Route
-          path="/"
+          path="/dashboard"
           element={
             <PrivateRoute>
               <Layout />
@@ -67,11 +68,13 @@ function App() {
           <Route path="approval" element={<VisitorApproval />} />
           <Route path="users" element={<UserManagement />} />
           <Route path="logs" element={<VisitLogs />} />
-          <Route path="register-visitor" element={<VisitorRegistration />} /> {/* ✅ FIXED: Added Route */}
+          <Route path="register-visitor" element={<VisitorRegistration />} />
         </Route>
       </Routes>
       <Toaster />
     </Router>
+
+
   );
 }
 

@@ -1,38 +1,42 @@
-import React from 'react';
+// VisitorRegistration.tsx
+
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Camera } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 import type { Database } from '../lib/database.types';
+import QRCode from 'qrcode';
+import emailjs from '@emailjs/browser'; // <--- ADD this
+import { v4 as uuidv4 } from 'uuid'; // <--- To generate visitId
 
 type VisitorFormData = {
-  // Visitors table fields
   name: string;
   email: string;
   phone: string;
   company: string;
   photo?: FileList;
-  
-  // Visits table fields
+
   purpose: string;
   hostEmail: string;
   checkInTime: string;
   checkOutTime: string;
   validUntil: string;
   notes: string;
-  status?: string; // Default value will be set in onSubmit
+  status?: string;
 };
 
 export function VisitorRegistration() {
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<VisitorFormData>();
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
 
-  const onSubmit = async (data: VisitorFormData) => {
+  const onSubmit = async (formData: VisitorFormData) => {
     try {
       let photoUrl = null;
 
       // Upload photo if provided
-      if (data.photo?.[0]) {
-        const file = data.photo[0];
+      if (formData.photo?.[0]) {
+        const file = formData.photo[0];
         const fileExt = file.name.split('.').pop();
         const fileName = `${Math.random()}.${fileExt}`;
         const filePath = `visitor-photos/${fileName}`;
@@ -54,50 +58,47 @@ export function VisitorRegistration() {
       const { data: hostData, error: hostError } = await supabase
         .from('hosts')
         .select('id')
-        .eq('email', data.hostEmail)
+        .eq('email', formData.hostEmail)
         .single();
 
-      if (hostError) throw new Error('Host not found with email: ' + data.hostEmail);
+      if (hostError) throw new Error('Host not found with email: ' + formData.hostEmail);
 
       // Step 1: Create or find existing visitor
       let visitorId;
       
-      // Check if visitor already exists with the same email
       const { data: existingVisitor, error: visitorLookupError } = await supabase
         .from('visitors')
         .select('id')
-        .eq('email', data.email)
+        .eq('email', formData.email)
         .maybeSingle();
-        
+
       if (visitorLookupError && visitorLookupError.code !== 'PGRST116') {
         throw visitorLookupError;
       }
-      
+
       if (existingVisitor) {
-        // Update existing visitor
         visitorId = existingVisitor.id;
-        
+
         const { error: updateError } = await supabase
           .from('visitors')
           .update({
-            name: data.name,
-            phone: data.phone,
-            company: data.company,
-            photo_url: photoUrl || undefined, // Only update if new photo provided
+            name: formData.name,
+            phone: formData.phone,
+            company: formData.company,
+            photo_url: photoUrl || undefined,
             updated_at: new Date().toISOString()
           })
           .eq('id', visitorId);
-          
+
         if (updateError) throw updateError;
       } else {
-        // Create new visitor
         const { data: newVisitor, error: createError } = await supabase
           .from('visitors')
           .insert({
-            name: data.name,
-            email: data.email,
-            phone: data.phone,
-            company: data.company,
+            name: formData.name,
+            email: formData.email,
+            phone: formData.phone,
+            company: formData.company,
             photo_url: photoUrl,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
@@ -106,37 +107,82 @@ export function VisitorRegistration() {
           .single();
 
         if (createError) throw createError;
-        
+
         visitorId = newVisitor.id;
       }
 
       // Step 2: Create visit record
       const currentTime = new Date().toISOString();
-      
+      const visitId = uuidv4(); // Generate unique visit ID
+
       const { error: visitError } = await supabase
         .from('visits')
         .insert({
-          visitor_id: visitorId, // This references the visitor's UUID from the visitors table
+          id: visitId,
+          visitor_id: visitorId,
           host_id: hostData.id,
-          purpose: data.purpose,
-          status: 'pending', // Default status for new visits
-          check_in_time: data.checkInTime ? new Date(data.checkInTime).toISOString() : null,
-          check_out_time: data.checkOutTime ? new Date(data.checkOutTime).toISOString() : null,
-          valid_until: new Date(data.validUntil).toISOString(),
-          notes: data.notes || null,
+          purpose: formData.purpose,
+          status: 'pending',
+          check_in_time: formData.checkInTime ? new Date(formData.checkInTime).toISOString() : null,
+          check_out_time: formData.checkOutTime ? new Date(formData.checkOutTime).toISOString() : null,
+          valid_until: new Date(formData.validUntil).toISOString(),
+          notes: formData.notes || null,
           created_at: currentTime,
           updated_at: currentTime
         });
 
       if (visitError) throw visitError;
 
-      toast.success('Visitor registered successfully');
+      // Step 3: Generate QR code with visit info
+      const qrData = JSON.stringify({
+        visitId,
+        name: formData.name,
+        email: formData.email,
+        purpose: formData.purpose,
+        validUntil: formData.validUntil,
+      });
+
+      const qrUrl = await QRCode.toDataURL(qrData);
+      setQrImageUrl(qrUrl);
+
+      // Step 4: Send Email using EmailJS
+      const emailResult = await emailjs.send(
+        'service_tmagvgd', // Your EmailJS Service ID
+        'template_c4a4dpu', // Your EmailJS Template ID
+        {
+          to_name: formData.name,
+          to_email: formData.email,
+          qr_code: qrUrl,
+          visit_id: visitId,
+          visit_purpose: formData.purpose,
+          host_email: formData.hostEmail,
+          valid_until: new Date(formData.validUntil).toLocaleString(),
+        },
+        'ApAlChy6Mq77wiEue' // Your EmailJS Public Key
+      );
+
+      if (emailResult.status !== 200) {
+        throw new Error('Failed to send email');
+      }
+
+      // // Step 5: Update visitor status
+      // const { error: updateVisitorStatusError } = await supabase
+      //   .from('visitors')
+      //   .update({ status: 'email_sent' })
+      //   .eq('id', visitorId);
+
+      // if (updateVisitorStatusError) {
+      //   console.error('Error updating visitor status:', updateVisitorStatusError);
+      // }
+
+      toast.success('Visitor registered and email sent successfully!');
       reset();
     } catch (error: any) {
       console.error('Registration error:', error);
-      toast.error(`Failed to register visitor: ${error.message || 'Unknown error'}`);
+      toast.error(`Failed: ${error.message || 'Unknown error'}`);
     }
   };
+
 
   return (
     <div className="max-w-3xl mx-auto">
