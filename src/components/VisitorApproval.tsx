@@ -4,6 +4,8 @@ import { CheckCircle, XCircle, Search } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 import type { Database } from '../lib/database.types';
+import QRCode from 'qrcode';
+import emailjs from '@emailjs/browser';
 
 type Visit = Database['public']['Tables']['visits']['Row'] & {
   visitors: Database['public']['Tables']['visitors']['Row'];
@@ -18,10 +20,9 @@ export function VisitorApproval() {
     try {
       const { data, error } = await supabase
         .from('visits')
-        .select(`
-          *,
-          visitors (*)
-        `)
+        .select(
+          '*, visitors(*)'
+        )
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
@@ -41,18 +42,58 @@ export function VisitorApproval() {
 
   const handleApproval = async (visitId: string, approved: boolean) => {
     try {
-      const { error } = await supabase
+      const { data: updatedData, error } = await supabase
         .from('visits')
         .update({
           status: approved ? 'approved' : 'denied',
           updated_at: new Date().toISOString(),
         })
-        .eq('id', visitId);
+        .eq('id', visitId)
+        .select('*, visitors(*)')
+        .single();
 
       if (error) throw error;
 
       toast.success(`Visit ${approved ? 'approved' : 'denied'} successfully`);
-      loadVisits();
+
+      if (approved && updatedData) {
+        // Generate QR code data
+        const qrData = JSON.stringify({
+          visitId: updatedData.id,
+          name: updatedData.visitors.name,
+          email: updatedData.visitors.email,
+          purpose: updatedData.purpose,
+          validUntil: updatedData.valid_until,
+        });
+
+        const qrUrl = await QRCode.toDataURL(qrData);
+
+        try {
+          const emailResult = await emailjs.send(
+            "service_tmagvgd", // Your EmailJS Service ID
+            "template_c4a4dpu", // Your EmailJS Template ID
+            {
+              to_name: updatedData.visitors.name,
+              to_email: updatedData.visitors.email,
+              qr_code: qrUrl,
+              visit_id: updatedData.id,
+              visit_purpose: updatedData.purpose,
+              valid_until: new Date(updatedData.valid_until).toLocaleString(),
+            },
+            "ApAlChy6Mq77wiEue" // Your EmailJS Public Key
+          );
+
+          if (emailResult.status === 200) {
+            toast.success('Approval email sent successfully!');
+          } else {
+            console.warn("Email sending failed with status:", emailResult.status);
+          }
+        } catch (emailError) {
+          console.error('Failed to send approval email:', emailError);
+        }
+      }
+
+      loadVisits(); // Reload the list after action
     } catch (error) {
       console.error('Error updating visit:', error);
       toast.error('Failed to update visit status');
