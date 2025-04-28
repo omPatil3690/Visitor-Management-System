@@ -18,6 +18,7 @@ import { VisitLogs } from "./components/VisitLogs";
 import { VisitorRegistration } from "./components/VisitorRegistration";
 import { useAuthStore } from "./store/auth";
 import Home from "./components/Home";
+import { RequestVisit } from "./components/RequestVisit";
 
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -53,6 +54,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/display" element={<PublicDisplay />} />
+        <Route path="/request-visit" element={<RequestVisit />} />
 
         {/* Private Routes */}
         <Route

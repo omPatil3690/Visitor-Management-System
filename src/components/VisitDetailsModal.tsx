@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { X, Check, Ban, Clock, CheckCircle, XCircle } from "lucide-react";
+import QRCode from "qrcode";
+import emailjs from "@emailjs/browser";
+import { v4 as uuidv4 } from "uuid";
 
 export type Visit = {
   id: string;
@@ -38,6 +41,7 @@ export function VisitDetailsModal({
 }: VisitDetailsModalProps) {
   const [loading, setLoading] = useState(false);
   const [currentVisit, setCurrentVisit] = useState<Visit | null>(null);
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
   const [actionType, setActionType] = useState<
     "approve" | "deny" | "complete" | null
   >(null);
@@ -49,12 +53,12 @@ export function VisitDetailsModal({
       newStatus === "approved"
         ? "approve"
         : newStatus === "denied"
-        ? "deny"
-        : newStatus === "completed"
-        ? "complete"
-        : null
+          ? "deny"
+          : newStatus === "completed"
+            ? "complete"
+            : null
     );
-
+    
     try {
       const updates = {
         status: newStatus,
@@ -65,13 +69,55 @@ export function VisitDetailsModal({
           check_out_time: new Date().toISOString(),
         }),
       };
-
-      const { error } = await supabase
+      console.log("VisitDetailModal");
+      const { data, error } = await supabase
         .from("visits")
         .update(updates)
-        .eq("id", visit.id);
+        .eq("id", visit.id)
+        .select('*, visitors(*)')
+        .single();
 
       if (error) throw error;
+      else {
+        if (newStatus == 'approved') {
+          console.log("data", data);
+          // Step 3: Generate QR code with visit info
+          const qrData = JSON.stringify({
+            visitId:visit.id,
+            name: data.visitors?.name,
+            email: data.visitors?.email,
+            purpose: data.purpose,
+            validUntil: data.validUntil,
+          });
+
+          const qrUrl = await QRCode.toDataURL(qrData);
+          setQrImageUrl(qrUrl);
+
+          // Step 4: Send Email using EmailJS
+          try {
+            const emailResult = await emailjs.send(
+              "service_tmagvgd", // Your EmailJS Service ID
+              "template_c4a4dpu", // Your EmailJS Template ID
+              {
+                to_name:  data.visitors?.name,
+                to_email:  data.visitors?.email,
+                qr_code: qrUrl,
+                visit_id:  data.id,
+                visit_purpose:  data.purpose,
+                valid_until: new Date( data.validUntil).toLocaleString(),
+              },
+              "ApAlChy6Mq77wiEue" // Your EmailJS Public Key
+            );
+
+            if (emailResult.status !== 200) {
+              console.warn("Email sending failed with status:", emailResult.status);
+            }
+          } catch (emailError) {
+            console.error("Failed to send email:", emailError);
+            // Continue execution even if email fails
+          }
+        }
+      }
 
       onStatusChange();
     } catch (error) {
@@ -235,8 +281,8 @@ export function VisitDetailsModal({
                                   className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
                                 >
                                   {loading &&
-                                  currentVisit?.id === visit.id &&
-                                  actionType === "approve" ? (
+                                    currentVisit?.id === visit.id &&
+                                    actionType === "approve" ? (
                                     <span className="animate-spin">↻</span>
                                   ) : (
                                     <>
@@ -257,8 +303,8 @@ export function VisitDetailsModal({
                                   className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
                                 >
                                   {loading &&
-                                  currentVisit?.id === visit.id &&
-                                  actionType === "deny" ? (
+                                    currentVisit?.id === visit.id &&
+                                    actionType === "deny" ? (
                                     <span className="animate-spin">↻</span>
                                   ) : (
                                     <>
@@ -282,8 +328,8 @@ export function VisitDetailsModal({
                                 className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
                               >
                                 {loading &&
-                                currentVisit?.id === visit.id &&
-                                actionType === "complete" ? (
+                                  currentVisit?.id === visit.id &&
+                                  actionType === "complete" ? (
                                   <span className="animate-spin">↻</span>
                                 ) : (
                                   <>
