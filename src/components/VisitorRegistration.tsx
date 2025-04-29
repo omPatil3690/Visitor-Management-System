@@ -222,8 +222,8 @@ export function VisitorRegistration() {
       // Step 4: Send Email using EmailJS
       try {
         const emailResult = await emailjs.send(
-          "service_tmagvgd", // Your EmailJS Service ID
-          "template_c4a4dpu", // Your EmailJS Template ID
+          "", // Your EmailJS Service ID
+          "", // Your EmailJS Template ID
           {
             to_name: formData.name,
             to_email: formData.email,
@@ -234,7 +234,7 @@ export function VisitorRegistration() {
             entity_email: formData.entityEmail || "N/A",
             valid_until: new Date(formData.validUntil).toLocaleString(),
           },
-          "ApAlChy6Mq77wiEue" // Your EmailJS Public Key
+          "" // Your EmailJS Public Key
         );
 
         if (emailResult.status !== 200) {
@@ -548,3 +548,6 @@ export function VisitorRegistration() {
     </div>
   );
 }
+
+
+

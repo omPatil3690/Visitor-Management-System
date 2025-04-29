@@ -43,7 +43,7 @@ export function VisitDetailsModal({
   const [currentVisit, setCurrentVisit] = useState<Visit | null>(null);
   const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
   const [actionType, setActionType] = useState<
-    "approve" | "deny" | "complete" | null
+    "approve" | "deny" | "comple3te" | null
   >(null);
 
   const handleStatusUpdate = async (visit: Visit, newStatus: string) => {
@@ -96,8 +96,8 @@ export function VisitDetailsModal({
           // Step 4: Send Email using EmailJS
           try {
             const emailResult = await emailjs.send(
-              "service_tmagvgd", // Your EmailJS Service ID
-              "template_c4a4dpu", // Your EmailJS Template ID
+              "", // Your EmailJS Service ID
+              "", // Your EmailJS Template ID
               {
                 to_name:  data.visitors?.name,
                 to_email:  data.visitors?.email,
@@ -106,7 +106,7 @@ export function VisitDetailsModal({
                 visit_purpose:  data.purpose,
                 valid_until: new Date( data.validUntil).toLocaleString(),
               },
-              "ApAlChy6Mq77wiEue" // Your EmailJS Public Key
+              "" // Your EmailJS Public Key
             );
 
             if (emailResult.status !== 200) {
