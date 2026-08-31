@@ -7,7 +7,7 @@
     "dev": "vite",
     "server": "tsx watch server/index.ts",
     "dev:all": "concurrently \"npm run dev\" \"npm run server\"",
-    "build": "prisma generate && tsc && vite build",
+    "build": "prisma generate && esbuild server/index.ts --bundle --platform=node --format=esm --target=node18 --packages=external --outfile=api/index.js && tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "prisma:generate": "prisma generate",
