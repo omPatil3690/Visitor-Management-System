@@ -1,0 +1,109 @@
+// Prisma schema for Visitor Management System
+// Database: Neon (PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enums
+enum VisitStatus {
+  pending
+  approved
+  denied
+  completed
+  cancelled
+}
+
+enum UserRole {
+  admin
+  guard
+  host
+}
+
+// Models
+model Department {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  hosts Host[]
+
+  @@map("departments")
+}
+
+model Host {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authId       String?   @map("auth_id") @db.Uuid
+  name         String
+  email        String    @unique
+  passwordHash String?   @map("password_hash")
+  departmentId String?   @map("department_id") @db.Uuid
+  role         UserRole  @default(host)
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  department Department? @relation(fields: [departmentId], references: [id])
+  visits     Visit[]
+  approvedVisits Visit[] @relation("ApprovedVisits")
+  deniedVisits   Visit[] @relation("DeniedVisits")
+
+  @@index([email], name: "idx_hosts_email")
+  @@map("hosts")
+}
+
+model Visitor {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  email     String
+  phone     String
+  company   String?
+  photoUrl  String?  @map("photo_url")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  visits Visit[]
+
+  @@unique([email, phone])
+  @@index([email], name: "idx_visitors_email")
+  @@map("visitors")
+}
+
+model Visit {
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  visitorId    String      @map("visitor_id") @db.Uuid
+  hostId       String      @map("host_id") @db.Uuid
+  purpose      String
+  status       VisitStatus @default(pending)
+  checkInTime  DateTime?   @map("check_in_time") @db.Timestamptz(6)
+  checkOutTime DateTime?   @map("check_out_time") @db.Timestamptz(6)
+  validUntil   DateTime    @map("valid_until") @db.Timestamptz(6)
+  notes        String?
+  approvedBy   String?     @map("approved_by") @db.Uuid
+  approvedAt   DateTime?   @map("approved_at") @db.Timestamptz(6)
+  deniedBy     String?     @map("denied_by") @db.Uuid
+  deniedAt     DateTime?   @map("denied_at") @db.Timestamptz(6)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  visitor      Visitor @relation(fields: [visitorId], references: [id])
+  host         Host    @relation(fields: [hostId], references: [id])
+  approvedByHost Host? @relation("ApprovedVisits", fields: [approvedBy], references: [id])
+  deniedByHost   Host? @relation("DeniedVisits", fields: [deniedBy], references: [id])
+
+  @@index([status], name: "idx_visits_status")
+  @@index([createdAt], name: "idx_visits_created_at")
+  @@index([hostId], name: "idx_visits_host_id")
+  @@index([visitorId], name: "idx_visits_visitor_id")
+  @@map("visits")
+}
