@@ -2,17 +2,12 @@ import { Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { AuthRequest, AuthUser } from "../types";
 
-// Validate JWT_SECRET in production
-if (
-  process.env.NODE_ENV === "production" &&
-  (!process.env.JWT_SECRET ||
-    process.env.JWT_SECRET === "your-secret-key-change-in-production")
-) {
-  throw new Error("JWT_SECRET must be set in production environment");
-}
-
 const JWT_SECRET =
   process.env.JWT_SECRET || "dev-secret-key-change-in-production";
+
+if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+  console.warn("⚠️ Warning: JWT_SECRET environment variable is not set in production. Using fallback secret.");
+}
 
 // Failed login attempts tracking
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();

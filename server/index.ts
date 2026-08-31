@@ -26,16 +26,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Health check
-app.get("/health", (req, res) => {
+app.get(["/health", "/api/health"], (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
 // API Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/visits", visitsRoutes);
-app.use("/api/visitors", visitorsRoutes);
-app.use("/api/hosts", hostsRoutes);
-app.use("/api/upload", uploadRoutes);
+app.use(["/api/auth", "/auth"], authRoutes);
+app.use(["/api/visits", "/visits"], visitsRoutes);
+app.use(["/api/visitors", "/visitors"], visitorsRoutes);
+app.use(["/api/hosts", "/hosts"], hostsRoutes);
+app.use(["/api/upload", "/upload"], uploadRoutes);
 
 // Error handling middleware
 app.use(
