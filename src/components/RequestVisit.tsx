@@ -1,11 +1,9 @@
-import React, { useState, useEffect } from "react";
+import  { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Camera } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { supabase } from "../lib/supabase";
-import type { Database } from "../lib/database.types";
+import { api } from '../lib/api';
 import QRCode from "qrcode";
-import { v4 as uuidv4 } from "uuid";
 
 type VisitorFormData = {
   name: string;
@@ -16,7 +14,6 @@ type VisitorFormData = {
 
   purpose: string;
   hostEmail: string;
-  entityEmail: string; // Added field for entity email
   checkInTime: string;
   checkOutTime: string;
   validUntil: string;
@@ -32,181 +29,96 @@ export function RequestVisit() {
     formState: { errors, isSubmitting },
   } = useForm<VisitorFormData>();
   const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-
-  // Get the current user session when component mounts
-  useEffect(() => {
-    async function getUserId() {
-      const { data } = await supabase.auth.getSession();
-      if (data.session?.user) {
-        setUserId(data.session.user.id);
-      }
-    }
-    getUserId();
-  }, []);
 
   const onSubmit = async (formData: VisitorFormData) => {
     try {
-    //   // Check if user is authenticated
-    //   if (!userId) {
-    //     toast.error("You must be logged in to request a visit");
-    //     return;
-    //   }
-
-      let photoUrl = null;
+      let photoUrl = '';
 
       // Upload photo if provided
       if (formData.photo?.[0]) {
         const file = formData.photo[0];
-        const fileExt = file.name.split(".").pop();
-        const fileName = `${uuidv4()}.${fileExt}`; // Using UUID for unique filenames
-        const filePath = fileName;
+        toast.loading('Uploading photo...');
 
-        const { error: uploadError, data: uploadData } = await supabase.storage
-          .from("identification-images")
-          .upload(filePath, file, {
-            cacheControl: "3600",
-            upsert: false,
-          });
+        const uploadResponse = await api.uploadImage(file);
 
-        if (uploadError) {
-          console.error("Photo upload error:", uploadError);
-          throw new Error(`Photo upload failed: ${uploadError.message}`);
+        if (uploadResponse.error) {
+          toast.dismiss();
+          throw new Error(uploadResponse.error);
         }
 
-        const {
-          data: { publicUrl },
-        } = supabase.storage
-          .from("identification-images")
-          .getPublicUrl(filePath);
-
-        photoUrl = publicUrl;
+        photoUrl = uploadResponse.data.url;
+        toast.dismiss();
+        toast.success('Photo uploaded!');
       }
 
-      // // Get host details
-      // const { data: hostData, error: hostError } = await supabase
-      //   .from("hosts")
-      //   .select("id")
-      //   .eq("email", formData.hostEmail)
-      //   .single();
+      // Get host details
+      toast.loading('Finding host...');
+      const hostResponse = await api.searchHost(formData.hostEmail);
 
-      // if (hostError) {
-      //   throw new Error("Host not found with email: " + formData.hostEmail);
-      // }
+      if (hostResponse.error) {
+        toast.dismiss();
+        throw new Error("Host not found with email: " + formData.hostEmail);
+      }
 
-      // Look up entity by email in the hosts table, if provided
-            let entityId = null;
-            if (formData.entityEmail && formData.entityEmail.trim() !== "") {
-              const { data: entityData, error: entityError } = await supabase
-                .from("hosts")
-                .select("id")
-                .eq("email", formData.entityEmail)
-                .eq("role", "entity") // Make sure we're getting an entity role
-                .maybeSingle();
-      
-              if (entityError && entityError.code !== "PGRST116") {
-                console.error("Entity lookup error:", entityError);
-                throw new Error("Error looking up entity: " + entityError.message);
-              }
-      
-              if (entityData) {
-                entityId = entityData.id;
-              } else {
-                toast.error(
-                  "No entity found with the provided email. Please make sure the entity exists in the system."
-                );
-                throw new Error(
-                  "No entity found with email: " + formData.entityEmail
-                );
-              }
-            }
-      
+      const host = hostResponse.data;
+      toast.dismiss();
 
-      // Step 1: Create or find existing visitor
+      // Step 1: Create or update visitor
+      toast.loading('Creating visitor record...');
+
+      // First check if visitor exists
+      const searchResponse = await api.searchVisitor({ email: formData.email });
+
       let visitorId;
 
-      const { data: existingVisitor, error: visitorLookupError } =
-        await supabase
-          .from("visitors")
-          .select("id")
-          .eq("email", formData.email)
-          .maybeSingle();
-
-      if (visitorLookupError && visitorLookupError.code !== "PGRST116") {
-        throw visitorLookupError;
-      }
-
-      if (existingVisitor) {
-        visitorId = existingVisitor.id;
-
-        const { error: updateError } = await supabase
-          .from("visitors")
-          .update({
-            name: formData.name,
-            phone: formData.phone,
-            company: formData.company || null,
-            photo_url: photoUrl,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", visitorId);
-
-        if (updateError) {
-          console.error("Visitor update error:", updateError);
-          throw updateError;
-        }
+      if (searchResponse.data && !searchResponse.error) {
+        // Visitor exists, use their ID
+        visitorId = searchResponse.data.id;
+        toast.dismiss();
+        toast.success('Existing visitor found!');
       } else {
-        const { data: newVisitor, error: createError } = await supabase
-          .from("visitors")
-          .insert({
-            name: formData.name,
-            email: formData.email,
-            phone: formData.phone,
-            company: formData.company || null,
-            photo_url: photoUrl,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .select()
-          .single();
+        // Create new visitor
+        const visitorResponse = await api.createVisitor({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          company: formData.company || undefined,
+          photoUrl: photoUrl || undefined,
+        });
 
-        if (createError) {
-          console.error("Visitor creation error:", createError);
-          throw createError;
+        if (visitorResponse.error) {
+          toast.dismiss();
+          throw new Error(visitorResponse.error);
         }
 
-        visitorId = newVisitor.id;
+        visitorId = visitorResponse.data.id;
+        toast.dismiss();
+        toast.success('Visitor record created!');
       }
 
       // Step 2: Create visit record
-      const currentTime = new Date().toISOString();
-      const visitId = uuidv4(); // Generate unique visit ID
+      toast.loading('Creating visit request...');
 
-      const { error: visitError } = await supabase.from("visits").insert({
-        id: visitId,
-        visitor_id: visitorId,
-        entity_id : entityId,
+      const visitResponse = await api.createVisit({
+        visitorId,
+        hostId: host.id,
         purpose: formData.purpose,
-        status: "pending",
-        check_in_time: formData.checkInTime
-          ? new Date(formData.checkInTime).toISOString()
-          : null,
-        check_out_time: formData.checkOutTime
-          ? new Date(formData.checkOutTime).toISOString()
-          : null,
-        valid_until: new Date(formData.validUntil).toISOString(),
-        notes: formData.notes || null,
-        created_at: currentTime,
-        updated_at: currentTime,
+        validUntil: new Date(formData.validUntil).toISOString(),
+        notes: formData.notes || undefined,
       });
 
-      if (visitError) {
-        console.error("Visit creation error:", visitError);
-        throw visitError;
+      if (visitResponse.error) {
+        toast.dismiss();
+        throw new Error(visitResponse.error);
       }
+
+      const visit = visitResponse.data;
+      toast.dismiss();
+      toast.success('Visit requested successfully!');
 
       // Step 3: Generate QR code with visit info
       const qrData = JSON.stringify({
-        visitId,
+        visitId: visit.id,
         name: formData.name,
         email: formData.email,
         purpose: formData.purpose,
@@ -216,10 +128,9 @@ export function RequestVisit() {
       const qrUrl = await QRCode.toDataURL(qrData);
       setQrImageUrl(qrUrl);
 
-      toast.success("Visit requested successfully!");
       reset();
     } catch (error: any) {
-      console.error("Registration error:", error);
+      console.error('Registration error:', error);
       toast.error(`Failed: ${error.message || "Unknown error"}`);
     }
   };
@@ -242,6 +153,30 @@ export function RequestVisit() {
           <form onSubmit={handleSubmit(onSubmit)}>
             <div className="shadow sm:rounded-md sm:overflow-hidden">
               <div className="px-4 py-5 bg-white space-y-6 sm:p-6">
+                {qrImageUrl && (
+                  <div className="rounded-md bg-green-50 p-4 mb-4">
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="ml-3">
+                        <p className="text-sm font-medium text-green-800">
+                          Visit requested successfully!
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex justify-center">
+                      <div className="p-4 bg-white border rounded-md shadow-sm">
+                        <img src={qrImageUrl} alt="Visit QR Code" className="w-48 h-48" />
+                        <p className="mt-2 text-xs text-center text-gray-500">QR Code for your visit</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Visitor Information Section */}
                 <div>
                   <h4 className="text-md font-medium text-gray-700 mb-4">
@@ -382,18 +317,25 @@ export function RequestVisit() {
                     </div>
                     <div className="col-span-6">
                       <label
-                        htmlFor="entityEmail"
+                        htmlFor="hostEmail"
                         className="block text-sm font-medium text-gray-700"
                       >
-                        Entity email
+                        Host email
                       </label>
                       <input
                         type="email"
-                        {...register("entityEmail")}
+                        {...register("hostEmail", {
+                          required: "Host email is required",
+                        })}
                         className="mt-1 focus:ring-primary-500 focus:border-primary-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
                       />
+                      {errors.hostEmail && (
+                        <p className="mt-1 text-sm text-red-600">
+                          {errors.hostEmail.message}
+                        </p>
+                      )}
                       <p className="mt-1 text-xs text-gray-500">
-                        Enter the email of the entity associated with this visit
+                        Enter the email of the person you are visiting
                       </p>
                     </div>
 
@@ -425,7 +367,7 @@ export function RequestVisit() {
                       />
                     </div>
 
-                   
+
 
                     <div className="col-span-6 sm:col-span-3">
                       <label

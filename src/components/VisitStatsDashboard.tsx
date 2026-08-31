@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
+import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
-import { Users, UserCheck, AlertCircle, CheckCircle, XCircle, TrendingUp } from "lucide-react";
+import {
+  Users,
+  UserCheck,
+  AlertCircle,
+  CheckCircle,
+  XCircle,
+  TrendingUp,
+} from "lucide-react";
 // Fix the import path - note the exact filename casing and path
-import { VisitDetailsModal } from "./VisitDetailsModal";  // Importing from the same folder
+import { VisitDetailsModal } from "./VisitDetailsModal"; // Importing from the same folder
 
 // Define proper types to avoid type errors
 type UserRole = "admin" | "guard" | "resident" | "visitor";
@@ -22,7 +29,7 @@ const VISIT_STATUS = {
   PENDING: "pending",
   APPROVED: "approved",
   COMPLETED: "completed",
-  CANCELLED: "cancelled"
+  CANCELLED: "cancelled",
 };
 
 export function VisitStatsDashboard() {
@@ -35,356 +42,101 @@ export function VisitStatsDashboard() {
   useEffect(() => {
     // Log user role for debugging
     console.log("Current user role:", user?.role);
-    
+
     if (user?.role) fetchStats(user.role as UserRole);
 
-    // Test basic connection to Supabase
-    const testConnection = async () => {
-      try {
-        console.log("Testing Supabase connection...");
-        const { data, error } = await supabase.from("visits").select("id").limit(1);
-        
-        if (error) {
-          console.error("Supabase connection test failed:", error);
-          setConnectionError(`Connection error: ${error.message}`);
-        } else {
-          console.log("Supabase connection successful, sample data:", data);
-          setConnectionError(null);
-        }
-      } catch (err: any) {
-        console.error("Supabase connection test exception:", err);
-        setConnectionError(`Connection exception: ${err.message}`);
-      }
-    };
-    
-    testConnection();
-
-    // Live updates for visit approvals
-    const subscription = supabase
-      .channel("visits")
-      .on("postgres_changes", { event: "*", schema: "public", table: "visits" }, (payload) => {
-        console.log("Realtime change detected:", payload);
-        if (user?.role) fetchStats(user.role as UserRole);
-      })
-      .subscribe((status) => {
-        console.log("Realtime subscription status:", status);
-      });
+    // Poll for updates every 10 seconds
+    const pollInterval = setInterval(() => {
+      if (user?.role) fetchStats(user.role as UserRole);
+    }, 10000);
 
     return () => {
-      console.log("Cleaning up subscription");
-      supabase.removeChannel(subscription);
+      clearInterval(pollInterval);
     };
   }, [user?.role]);
 
   const fetchStats = async (role: UserRole) => {
     console.log(`Fetching stats for role: ${role}`);
     try {
-      // Get today's date range in UTC, accounting for local timezone (India)
       const localToday = new Date();
-      localToday.setHours(0, 0, 0, 0); // Start of today in local time
-      
-      const utcTodayStart = new Date(localToday.getTime() - (localToday.getTimezoneOffset() * 60000)).toISOString();
-      
+      localToday.setHours(0, 0, 0, 0);
+
+      const utcTodayStart = new Date(
+        localToday.getTime() - localToday.getTimezoneOffset() * 60000
+      ).toISOString();
+
       const localTomorrow = new Date(localToday);
       localTomorrow.setDate(localToday.getDate() + 1);
-      const utcTomorrowStart = new Date(localTomorrow.getTime() - (localTomorrow.getTimezoneOffset() * 60000)).toISOString();
-      
-      console.log("Local today:", localToday.toISOString());
-      console.log("UTC today start for filtering:", utcTodayStart);
-      console.log("UTC tomorrow start for filtering:", utcTomorrowStart);
+      const utcTomorrowStart = new Date(
+        localTomorrow.getTime() - localTomorrow.getTimezoneOffset() * 60000
+      ).toISOString();
 
-      switch (role) {
-        case "admin": {
-          console.log("Fetching admin stats...");
-          
-          // Keep the first card for Total Users
-          const { count: totalUsers, error: usersError } = await supabase
-            .from("hosts")
-            .select("*", { count: "exact", head: true });
-          
-          // New queries for the updated cards with proper time range
-          const [
-            { count: approvedToday, error: approvedError },
-            { count: newRequestsToday, error: newRequestsError },
-            { count: completedToday, error: completedError },
-            { count: cancelledToday, error: cancelledError }
-          ] = await Promise.all([
-            // 1. Approved Visits - approved today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.APPROVED)
-              .gte("approved_at", utcTodayStart)
-              .lt("approved_at", utcTomorrowStart),
-            
-            // 2. New Visit Requests - pending created today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.PENDING)
-              .gte("created_at", utcTodayStart)
-              .lt("created_at", utcTomorrowStart),
-            
-            // 3. Completed Visits - completed today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.COMPLETED)
-              .gte("completed_at", utcTodayStart)
-              .lt("completed_at", utcTomorrowStart),
-            
-            // 4. Cancelled Visits - cancelled today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.CANCELLED)
-              .gte("cancelled_at", utcTodayStart)
-              .lt("cancelled_at", utcTomorrowStart),
-          ]);
-          
-          // Log all errors for debugging
-          console.log({
-            usersError,
-            approvedError,
-            newRequestsError,
-            completedError,
-            cancelledError
-          });
+      // Fetch stats from API
+      const response = await api.getVisitStats({
+        startDate: utcTodayStart,
+        endDate: utcTomorrowStart,
+      });
 
-          console.log("Stats counts:", {
-            totalUsers,
-            approvedToday,
-            newRequestsToday,
-            completedToday,
-            cancelledToday
-          });
-
-          setStats([
-            { name: "Total Users", value: totalUsers ?? 0, icon: Users, color: "text-blue-500", bgColor: "bg-blue-50" },
-            { name: "Approved Visits", value: approvedToday ?? 0, icon: UserCheck, color: "text-green-500", bgColor: "bg-green-50", status: VISIT_STATUS.APPROVED },
-            { name: "New Visit Requests", value: newRequestsToday ?? 0, icon: AlertCircle, color: "text-yellow-500", bgColor: "bg-yellow-50", status: VISIT_STATUS.PENDING },
-            { name: "Completed Visits", value: completedToday ?? 0, icon: CheckCircle, color: "text-indigo-500", bgColor: "bg-indigo-50", status: VISIT_STATUS.COMPLETED },
-            { name: "Cancelled Visits", value: cancelledToday ?? 0, icon: XCircle, color: "text-red-500", bgColor: "bg-red-50", status: VISIT_STATUS.CANCELLED },
-          ]);
-          break;
-        }
-
-        case "guard": {
-          console.log("Fetching guard stats...");
-          
-          const [
-            { count: approvedToday },
-            { count: newRequestsToday },
-            { count: completedToday },
-            { count: cancelledToday }
-          ] = await Promise.all([
-            // 1. Approved Visits - approved today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.APPROVED)
-              .gte("approved_at", utcTodayStart)
-              .lt("approved_at", utcTomorrowStart),
-            
-            // 2. New Visit Requests - pending created today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.PENDING)
-              .gte("created_at", utcTodayStart)
-              .lt("created_at", utcTomorrowStart),
-            
-            // 3. Completed Visits - completed today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.COMPLETED)
-              .gte("completed_at", utcTodayStart)
-              .lt("completed_at", utcTomorrowStart),
-            
-            // 4. Cancelled Visits - cancelled today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.CANCELLED)
-              .gte("cancelled_at", utcTodayStart)
-              .lt("cancelled_at", utcTomorrowStart),
-          ]);
-
-          console.log("Guard stats:", { 
-            approvedToday, 
-            newRequestsToday, 
-            completedToday, 
-            cancelledToday 
-          });
-
-          setStats([
-            { name: "Approved Visits", value: approvedToday ?? 0, icon: UserCheck, color: "text-green-500", bgColor: "bg-green-50", status: VISIT_STATUS.APPROVED },
-            { name: "New Visit Requests", value: newRequestsToday ?? 0, icon: AlertCircle, color: "text-yellow-500", bgColor: "bg-yellow-50", status: VISIT_STATUS.PENDING },
-            { name: "Completed Visits", value: completedToday ?? 0, icon: CheckCircle, color: "text-indigo-500", bgColor: "bg-indigo-50", status: VISIT_STATUS.COMPLETED },
-            { name: "Cancelled Visits", value: cancelledToday ?? 0, icon: XCircle, color: "text-red-500", bgColor: "bg-red-50", status: VISIT_STATUS.CANCELLED },
-          ]);
-          break;
-        }
-
-        case "resident": {
-          const userId = user?.id;
-          console.log("Fetching resident stats for user ID:", userId);
-          
-          if (!userId) {
-            console.error("No user ID available for resident");
-            return;
-          }
-
-          const [
-            { count: approvedToday },
-            { count: newRequestsToday },
-            { count: completedToday },
-            { count: cancelledToday }
-          ] = await Promise.all([
-            // 1. Approved Visits - approved today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("host_id", userId)
-              .eq("status", VISIT_STATUS.APPROVED)
-              .gte("approved_at", utcTodayStart)
-              .lt("approved_at", utcTomorrowStart),
-            
-            // 2. New Visit Requests - pending created today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("host_id", userId)
-              .eq("status", VISIT_STATUS.PENDING)
-              .gte("created_at", utcTodayStart)
-              .lt("created_at", utcTomorrowStart),
-            
-            // 3. Completed Visits - completed today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("host_id", userId)
-              .eq("status", VISIT_STATUS.COMPLETED)
-              .gte("completed_at", utcTodayStart)
-              .lt("completed_at", utcTomorrowStart),
-            
-            // 4. Cancelled Visits - cancelled today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("host_id", userId)
-              .eq("status", VISIT_STATUS.CANCELLED)
-              .gte("cancelled_at", utcTodayStart)
-              .lt("cancelled_at", utcTomorrowStart),
-          ]);
-
-          console.log("Resident stats:", { 
-            approvedToday, 
-            newRequestsToday, 
-            completedToday, 
-            cancelledToday 
-          });
-
-          setStats([
-            { name: "Approved Visits", value: approvedToday ?? 0, icon: UserCheck, color: "text-green-500", bgColor: "bg-green-50", status: VISIT_STATUS.APPROVED },
-            { name: "New Visit Requests", value: newRequestsToday ?? 0, icon: AlertCircle, color: "text-yellow-500", bgColor: "bg-yellow-50", status: VISIT_STATUS.PENDING },
-            { name: "Completed Visits", value: completedToday ?? 0, icon: CheckCircle, color: "text-indigo-500", bgColor: "bg-indigo-50", status: VISIT_STATUS.COMPLETED },
-            { name: "Cancelled Visits", value: cancelledToday ?? 0, icon: XCircle, color: "text-red-500", bgColor: "bg-red-50", status: VISIT_STATUS.CANCELLED },
-          ]);
-          break;
-        }
-
-        case "visitor": {
-          const visitorId = user?.id;
-          console.log("Fetching visitor stats for visitor ID:", visitorId);
-          
-          if (!visitorId) {
-            console.error("No user ID available for visitor");
-            return;
-          }
-
-          const [
-            { count: approvedToday },
-            { count: newRequestsToday },
-            { count: completedToday },
-            { count: cancelledToday }
-          ] = await Promise.all([
-            // 1. Approved Visits - approved today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("visitor_id", visitorId)
-              .eq("status", VISIT_STATUS.APPROVED)
-              .gte("approved_at", utcTodayStart)
-              .lt("approved_at", utcTomorrowStart),
-            
-            // 2. New Visit Requests - pending created today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("visitor_id", visitorId)
-              .eq("status", VISIT_STATUS.PENDING)
-              .gte("created_at", utcTodayStart)
-              .lt("created_at", utcTomorrowStart),
-            
-            // 3. Completed Visits - completed today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("visitor_id", visitorId)
-              .eq("status", VISIT_STATUS.COMPLETED)
-              .gte("completed_at", utcTodayStart)
-              .lt("completed_at", utcTomorrowStart),
-            
-            // 4. Cancelled Visits - cancelled today
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("visitor_id", visitorId)
-              .eq("status", VISIT_STATUS.CANCELLED)
-              .gte("cancelled_at", utcTodayStart)
-              .lt("cancelled_at", utcTomorrowStart),
-          ]);
-
-          console.log("Visitor stats:", { 
-            approvedToday, 
-            newRequestsToday, 
-            completedToday, 
-            cancelledToday 
-          });
-
-          setStats([
-            { name: "Approved Visits", value: approvedToday ?? 0, icon: UserCheck, color: "text-green-500", bgColor: "bg-green-50", status: VISIT_STATUS.APPROVED },
-            { name: "New Visit Requests", value: newRequestsToday ?? 0, icon: AlertCircle, color: "text-yellow-500", bgColor: "bg-yellow-50", status: VISIT_STATUS.PENDING },
-            { name: "Completed Visits", value: completedToday ?? 0, icon: CheckCircle, color: "text-indigo-500", bgColor: "bg-indigo-50", status: VISIT_STATUS.COMPLETED },
-            { name: "Cancelled Visits", value: cancelledToday ?? 0, icon: XCircle, color: "text-red-500", bgColor: "bg-red-50", status: VISIT_STATUS.CANCELLED },
-          ]);
-          break;
-        }
-
-        default:
-          console.warn("Unknown role:", role);
-          setStats([]);
+      if (response.error) {
+        throw new Error(response.error);
       }
+
+      const apiStats = response.data;
+      let statsData: StatItem[] = [];
+
+      // Similar stats for all roles
+      statsData = [
+        {
+          name: "Approved Visits",
+          value: apiStats.approved ?? 0,
+          icon: UserCheck,
+          color: "text-green-500",
+          bgColor: "bg-green-50",
+          status: VISIT_STATUS.APPROVED,
+        },
+        {
+          name: "New Visit Requests",
+          value: apiStats.pending ?? 0,
+          icon: AlertCircle,
+          color: "text-yellow-500",
+          bgColor: "bg-yellow-50",
+          status: VISIT_STATUS.PENDING,
+        },
+        {
+          name: "Completed Visits",
+          value: apiStats.completed ?? 0,
+          icon: CheckCircle,
+          color: "text-indigo-500",
+          bgColor: "bg-indigo-50",
+          status: VISIT_STATUS.COMPLETED,
+        },
+        {
+          name: "Cancelled Visits",
+          value: apiStats.cancelled ?? 0,
+          icon: XCircle,
+          color: "text-red-500",
+          bgColor: "bg-red-50",
+          status: VISIT_STATUS.CANCELLED,
+        },
+      ];
+
+      // Add total users card for admin
+      if (role === "admin") {
+        statsData.unshift({
+          name: "Total Users",
+          value: apiStats.totalUsers ?? 0,
+          icon: Users,
+          color: "text-blue-500",
+          bgColor: "bg-blue-50",
+        });
+      }
+
+      setStats(statsData);
+      setConnectionError(null);
     } catch (err: any) {
       console.error("⚠️ Error fetching stats:", err.message);
-      // Log more detailed error information
       console.error("Error details:", err);
-      
-      // Try a simpler query to see if basic queries work
-      try {
-        console.log("Attempting fallback simple query...");
-        const { data, error } = await supabase
-          .from("visits")
-          .select("id, status")
-          .limit(5);
-          
-        console.log("Fallback query result:", data);
-        console.log("Fallback query error:", error);
-      } catch (fallbackErr) {
-        console.error("Even fallback query failed:", fallbackErr);
-      }
+      setConnectionError(err.message || "Failed to fetch stats");
     }
   };
 
@@ -416,23 +168,36 @@ export function VisitStatsDashboard() {
         {stats.map((stat) => (
           <div
             key={stat.name}
-            className={`bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-300 ${stat.status ? 'cursor-pointer' : ''}`}
-            onClick={() => stat.status ? handleStatCardClick(stat.status) : null}
-            aria-label={stat.status ? `View ${stat.name.toLowerCase()}` : undefined}
+            className={`bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-300 ${stat.status ? "cursor-pointer" : ""}`}
+            onClick={() =>
+              stat.status ? handleStatCardClick(stat.status) : null
+            }
+            aria-label={
+              stat.status ? `View ${stat.name.toLowerCase()}` : undefined
+            }
             tabIndex={stat.status ? 0 : undefined}
           >
             <div className="p-6">
               <div className="flex items-center">
                 <div className={`p-3 rounded-lg ${stat.bgColor}`}>
-                  <stat.icon className={`h-6 w-6 ${stat.color}`} aria-hidden="true" />
+                  <stat.icon
+                    className={`h-6 w-6 ${stat.color}`}
+                    aria-hidden="true"
+                  />
                 </div>
                 <div className="ml-4">
-                  <h3 className="text-sm font-medium text-gray-600">{stat.name}</h3>
-                  <p className="mt-1 text-3xl font-semibold tracking-tight text-gray-900">{stat.value}</p>
+                  <h3 className="text-sm font-medium text-gray-600">
+                    {stat.name}
+                  </h3>
+                  <p className="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+                    {stat.value}
+                  </p>
                 </div>
               </div>
             </div>
-            <div className={`px-6 py-2 bg-gray-50 rounded-b-xl border-t border-gray-100`}>
+            <div
+              className={`px-6 py-2 bg-gray-50 rounded-b-xl border-t border-gray-100`}
+            >
               <div className="flex items-center text-xs text-gray-500">
                 <TrendingUp className="h-3 w-3 mr-1" />
                 <span>Today</span>
@@ -443,9 +208,9 @@ export function VisitStatsDashboard() {
       </div>
 
       {isModalOpen && selectedStatus && (
-        <VisitDetailsModal 
+        <VisitDetailsModal
           status={selectedStatus}
-          isOpen={isModalOpen} 
+          isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
         />
       )}

@@ -1,16 +1,14 @@
-import { create } from "zustand";
-import { supabase } from "../lib/supabase.ts";
-import type { Database } from "../lib/database.types";
+import { create } from 'zustand';
+import { api } from '../lib/api';
 
-type UserRole = Database["public"]["Enums"]["user_role"];
+type UserRole = 'admin' | 'guard' | 'host';
 
 interface User {
   id: string;
-  auth_id: string;
   name: string;
   email: string;
   role: UserRole;
-  department_id: string;
+  departmentId: string | null;
 }
 
 interface AuthState {
@@ -29,34 +27,22 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: true,
   error: null,
 
-  // ✅ Initialize authentication
+  // Initialize authentication
   initialize: async () => {
-    console.log("🔄 Checking authentication...");
+    console.log('🔄 Checking authentication...');
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) {
-        console.error("❌ Supabase Auth Error:", error.message);
-        set({ isAuthenticated: false, isLoading: false });
+      const response = await api.getSession();
+
+      if (response.error) {
+        console.log('❌ Not authenticated:', response.error);
+        set({ isAuthenticated: false, isLoading: false, user: null });
         return;
       }
 
-      if (session?.user) {
-        console.log("🔍 Supabase Session Found:", session);
-        const { data: hostData, error: hostError } = await supabase
-          .from("hosts")
-          .select("*")
-          .eq("auth_id", session.user.id)
-          .single();
-
-        if (hostError) throw hostError;
-
-        // ❌ Block visitor role
-        if (hostData.role === "visitor") {
-          throw new Error("Visitor role is no longer supported");
-        }
-
+      if (response.data?.user) {
+        console.log('✅ Session found:', response.data.user);
         set({
-          user: hostData as User,
+          user: response.data.user as User,
           isAuthenticated: true,
           isLoading: false,
           error: null,
@@ -65,66 +51,58 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({ isAuthenticated: false, isLoading: false, user: null });
       }
     } catch (err: any) {
-      console.error("❌ Authentication Initialization Failed:", err.message);
+      console.error('❌ Authentication initialization failed:', err.message);
       set({
         isAuthenticated: false,
         isLoading: false,
-        error: err.message || "Failed to initialize auth",
+        error: err.message || 'Failed to initialize auth',
+        user: null,
       });
     }
   },
 
-  // ✅ Login function
+  // Login function
   login: async (email: string, password: string) => {
     try {
       set({ isLoading: true, error: null });
 
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      const response = await api.login(email, password);
 
-      if (data?.user) {
-        console.log("✅ User logged in:", data.user);
-        const { data: hostData, error: hostError } = await supabase
-          .from("hosts")
-          .select("*")
-          .eq("auth_id", data.user.id)
-          .single();
+      if (response.error) {
+        throw new Error(response.error);
+      }
 
-        if (hostError) throw hostError;
-
-        // ❌ Block visitor role
-        if (hostData.role === "visitor") {
-          throw new Error("Visitor role is no longer supported");
-        }
-
+      if (response.data?.user) {
+        console.log('✅ User logged in:', response.data.user);
         set({
-          user: hostData as User,
+          user: response.data.user as User,
           isAuthenticated: true,
           isLoading: false,
           error: null,
         });
       }
     } catch (error: any) {
-      console.error("❌ Login failed:", error.message);
+      console.error('❌ Login failed:', error.message);
       set({
-        error: error.message || "Invalid credentials",
+        error: error.message || 'Invalid credentials',
         isLoading: false,
         isAuthenticated: false,
         user: null,
       });
+      throw error;
     }
   },
 
-  // ✅ Logout function
+  // Logout function
   logout: async () => {
     try {
       set({ isLoading: true, error: null });
-      await supabase.auth.signOut();
-      console.log("🚪 User logged out");
+      await api.logout();
+      console.log('🚪 User logged out');
       set({ user: null, isAuthenticated: false, isLoading: false, error: null });
     } catch (error: any) {
-      console.error("❌ Logout failed:", error.message);
-      set({ error: "Failed to logout", isLoading: false });
+      console.error('❌ Logout failed:', error.message);
+      set({ error: 'Failed to logout', isLoading: false });
     }
   },
 }));

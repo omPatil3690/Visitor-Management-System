@@ -1,24 +1,102 @@
-# Logs
-logs
-*.log
+# ===================================
+# Node.js & NPM
+# ===================================
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+.npm
+.yarn-integrity
 
-node_modules
-dist
-dist-ssr
-*.local
+# ===================================
+# Environment Variables & Secrets
+# ===================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
 
-# Editor directories and files
+# ===================================
+# Build Outputs
+# ===================================
+dist/
+dist-ssr/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# ===================================
+# Logs
+# ===================================
+logs/
+*.log
+
+# ===================================
+# OS Files
+# ===================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.swp
+*.swo
+*~
+
+# ===================================
+# IDE & Editor Files
+# ===================================
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+!.vscode/settings.json
+.idea/
+*.sublime-workspace
+*.sublime-project
+.fleet/
+.claude
+.bolt
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# ===================================
+# Prisma
+# ===================================
+/src/generated/prisma/
+/prisma/migrations/*_migration/
+
+# ===================================
+# Testing & Coverage
+# ===================================
+coverage/
+.nyc_output/
+*.lcov
+
+# ===================================
+# Temporary Files
+# ===================================
+*.tmp
+*.temp
+.cache/
+.parcel-cache/
+*.local
+
+# ===================================
+# Documentation Artifacts (optional)
+# ===================================
+# Uncomment if you want to keep these private
+# BACKEND_GUIDE.md
+# VISITOR_ENTRY_GUIDE.md
+# CLEANUP_PLAN.md
+
+# ===================================
+# Cloudinary & Upload Test Files
+# ===================================
+test-*.ps1
+login-response.json

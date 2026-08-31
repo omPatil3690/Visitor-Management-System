@@ -1,15 +1,9 @@
 import React, { useState } from 'react';
 import { Camera } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
-// import QRCode from 'qrcode';
 import QRCode from 'react-qr-code';
 import emailjs from '@emailjs/browser';
-import { createClient } from '@supabase/supabase-js';
-
-// Initialize Supabase - replace with your actual credentials
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+import { api } from '../lib/api';
+import { toast } from 'react-hot-toast';
 
 interface VisitorFormData {
   name: string;
@@ -33,11 +27,11 @@ export function RegisterVisitor() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+  const [visitData, setVisitData] = useState<any>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, files } = e.target;
-    
+
     if (type === 'file' && files) {
       setFormData(prev => ({ ...prev, photo: files[0] }));
     } else {
@@ -52,97 +46,98 @@ export function RegisterVisitor() {
     setSuccess(false);
 
     try {
-      // 1. Generate a unique ID for the visit
-      const visitId = uuidv4();
-      
-      // 2. Insert visitor data into Supabase
-      const { data: insertedData, error: dbError } = await supabase
-        .from('visitors')
-        .insert([
-          {
-            id: visitId,
-            name: formData.name,
-            email: formData.email,
-            phone: formData.phone,
-            purpose: formData.purpose,
-            host_email: formData.hostEmail,
-            valid_until: formData.validUntil,
-            status: 'pending',
-            created_at: new Date().toISOString(),
-          },
-        ])
-        .select()
-        .single();
-
-      if (dbError) {
-        throw new Error(dbError.message || 'Failed to insert visitor data');
-      }
-      
-      // 3. Upload photo if provided
+      // 1. Upload photo if provided
+      let photoUrl = '';
       if (formData.photo) {
-        const { error: uploadError } = await supabase
-          .storage
-          .from('visitor-photos')
-          .upload(`${visitId}.jpg`, formData.photo, {
-            cacheControl: '3600',
-            upsert: false
-          });
-          
-        if (uploadError) {
-          console.error('Error uploading photo:', uploadError);
-          // Continue with the process even if photo upload fails
+        toast.loading('Uploading photo...');
+        const uploadResponse = await api.uploadImage(formData.photo);
+
+        if (uploadResponse.error) {
+          throw new Error(uploadResponse.error);
         }
+
+        photoUrl = uploadResponse.data.url;
+        toast.dismiss();
+        toast.success('Photo uploaded!');
       }
-      
-      // 4. Generate QR code with visit info
-      const qrData = JSON.stringify({
-        visitId,
+
+      // 2. Find host by email
+      toast.loading('Finding host...');
+      const hostResponse = await api.searchHost(formData.hostEmail);
+
+      if (hostResponse.error) {
+        toast.dismiss();
+        throw new Error('Host not found with this email');
+      }
+
+      const host = hostResponse.data;
+      toast.dismiss();
+
+      // 3. Create or update visitor
+      toast.loading('Creating visitor record...');
+      const visitorResponse = await api.createVisitor({
         name: formData.name,
         email: formData.email,
-        purpose: formData.purpose,
-        validUntil: formData.validUntil
+        phone: formData.phone,
+        photoUrl,
       });
-      // @ts-ignore
-      const qrUrl = await QRCode.toDataURL(qrData);
-      setQrImageUrl(qrUrl);
-      
-      // 5. Send email with QR code
-      const emailResult = await emailjs.send(
-        'service_tmagvgd', // Your EmailJS service ID
-        'template_c4a4dpu', // Your EmailJS template ID
+
+      if (visitorResponse.error) {
+        toast.dismiss();
+        throw new Error(visitorResponse.error);
+      }
+
+      const visitor = visitorResponse.data;
+      toast.dismiss();
+      toast.success('Visitor record created!');
+
+      // 4. Create visit
+      toast.loading('Creating visit...');
+      const visitResponse = await api.createVisit({
+        visitorId: visitor.id,
+        hostId: host.id,
+        purpose: formData.purpose,
+        validUntil: new Date(formData.validUntil).toISOString(),
+      });
+
+      if (visitResponse.error) {
+        toast.dismiss();
+        throw new Error(visitResponse.error);
+      }
+
+      const visit = visitResponse.data;
+      toast.dismiss();
+      toast.success('Visit created successfully!');
+
+      // 5. Generate QR code data
+      const qrData = JSON.stringify({
+        visitId: visit.id,
+        visitorName: formData.name,
+        hostName: host.name,
+        purpose: formData.purpose,
+        validUntil: formData.validUntil,
+      });
+
+      setVisitData({ ...visit, qrData });
+
+      // TODO: Send email with QR code using EmailJS
+      // Uncomment and configure when EmailJS credentials are available
+      /*
+      await emailjs.send(
+        'YOUR_SERVICE_ID',
+        'YOUR_TEMPLATE_ID',
         {
           to_name: formData.name,
           to_email: formData.email,
-          qr_code: qrUrl,
-          visit_id: visitId,
+          visit_id: visit.id,
           visit_purpose: formData.purpose,
           host_email: formData.hostEmail,
           valid_until: new Date(formData.validUntil).toLocaleString(),
         },
-        'ApAlChy6Mq77wiEue' // Your EmailJS user ID
+        'YOUR_PUBLIC_KEY'
       );
+      */
 
-      if (emailResult.status !== 200) {
-        throw new Error('Failed to send email');
-      }
-      
-      // 6. Update visitor status to "email_sent"
-      const { error: updateError } = await supabase
-        .from('visitors')
-        .update({ status: 'email_sent' })
-        .eq('id', visitId);
-        
-      if (updateError) {
-        console.error('Error updating visitor status:', updateError);
-        // Continue even if status update fails
-      }
-      
-      console.log('Registration complete:', {
-        visitor: insertedData,
-        qrGenerated: true,
-        emailSent: true
-      });
-      
       setSuccess(true);
       setFormData({
         name: '',
@@ -154,7 +149,9 @@ export function RegisterVisitor() {
       });
     } catch (err) {
       console.error('Registration error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to register visitor. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to register visitor';
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -171,12 +168,12 @@ export function RegisterVisitor() {
             </p>
           </div>
         </div>
-        
+
         <div className="mt-5 md:mt-0 md:col-span-2">
           <form onSubmit={handleSubmit}>
             <div className="shadow sm:rounded-md sm:overflow-hidden">
               <div className="px-4 py-5 bg-white space-y-6 sm:p-6">
-                {success && (
+                {success && visitData && (
                   <div className="rounded-md bg-green-50 p-4 mb-4">
                     <div className="flex">
                       <div className="flex-shrink-0">
@@ -186,19 +183,17 @@ export function RegisterVisitor() {
                       </div>
                       <div className="ml-3">
                         <p className="text-sm font-medium text-green-800">
-                          Visitor registration successful! An email with QR code has been sent to the visitor.
+                          Visitor registration successful!
                         </p>
                       </div>
                     </div>
-                    
-                    {qrImageUrl && (
-                      <div className="mt-4 flex justify-center">
-                        <div className="p-2 bg-white border rounded-md shadow-sm">
-                          <img src={qrImageUrl} alt="Visitor QR Code" className="w-32 h-32" />
-                          <p className="mt-2 text-xs text-center text-gray-500">QR Code for visitor</p>
-                        </div>
+
+                    <div className="mt-4 flex justify-center">
+                      <div className="p-4 bg-white border rounded-md shadow-sm">
+                        <QRCode value={visitData.qrData} size={200} />
+                        <p className="mt-2 text-xs text-center text-gray-500">QR Code for visitor</p>
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
 
@@ -222,7 +217,7 @@ export function RegisterVisitor() {
                 <div className="grid grid-cols-6 gap-6">
                   <div className="col-span-6 sm:col-span-3">
                     <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-                      Full name aba
+                      Full name
                     </label>
                     <input
                       type="text"
@@ -322,22 +317,25 @@ export function RegisterVisitor() {
                           className="relative cursor-pointer bg-white rounded-md font-medium text-primary-600 hover:text-primary-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-500"
                         >
                           <span>Take photo</span>
-                          <input 
-                            id="photo" 
-                            name="photo" 
-                            type="file" 
+                          <input
+                            id="photo"
+                            name="photo"
+                            type="file"
                             accept="image/*"
                             className="sr-only"
                             onChange={handleChange}
                           />
                         </label>
                       </div>
-                      <p className="text-xs text-gray-500">PNG, JPG up to 10MB</p>
+                      <p className="text-xs text-gray-500">PNG, JPG up to 5MB</p>
+                      {formData.photo && (
+                        <p className="text-xs text-green-600">Photo selected: {formData.photo.name}</p>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
-              
+
               <div className="px-4 py-3 bg-gray-50 text-right sm:px-6">
                 <button
                   type="submit"

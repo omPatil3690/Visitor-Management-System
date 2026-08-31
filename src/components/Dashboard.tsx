@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
 import { useAuthStore } from "../store/auth";
+import { api } from "../lib/api";
 import {
-  Users,
   UserCheck,
   AlertCircle,
   CheckCircle,
   XCircle,
-  TrendingUp,
-  X,
+  Clock,
+  Calendar,
 } from "lucide-react";
 import { VisitDetailsModal } from "./VisitDetailsModal";
 import { Visit } from "./VisitDetailsModal";
@@ -19,7 +18,9 @@ type StatItem = {
   icon: React.ElementType;
   color: string;
   bgColor: string;
+  borderColor: string;
   status?: string;
+  description: string;
 };
 
 const VISIT_STATUS = {
@@ -36,80 +37,31 @@ export function Dashboard() {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string>("");
-  const [connectionTested, setConnectionTested] = useState(false);
   const [selectedVisits, setSelectedVisits] = useState<Visit[]>([]);
 
   useEffect(() => {
     if (!user?.role) return;
 
-    console.log("Current user role:", user.role);
+    // Initial fetch
+    fetchStats();
 
-    fetchStats(user.role);
-
-    const testConnection = async () => {
-      try {
-        console.log("Testing Supabase connection...");
-        const { data, error } = await supabase
-          .from("visits")
-          .select("id")
-          .limit(1);
-
-        if (error) {
-          console.error("Supabase connection test failed:", error);
-          setConnectionError(`Connection error: ${error.message}`);
-        } else {
-          console.log("Supabase connection successful, sample data:", data);
-          setConnectionError(null);
-        }
-      } catch (err: any) {
-        console.error("Supabase connection test exception:", err);
-        setConnectionError(`Connection exception: ${err.message}`);
-      } finally {
-        setConnectionTested(true);
-      }
-    };
-
-    if (!connectionTested) {
-      testConnection();
-    }
-
-    const subscription = supabase
-      .channel("visits")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "visits",
-        },
-        (payload) => {
-          console.log("Realtime change detected:", payload);
-          fetchStats(user.role);
-        }
-      )
-      .subscribe((status) => {
-        console.log("Realtime subscription status:", status);
-      });
+    // Poll for updates every 10 seconds
+    const pollInterval = setInterval(() => {
+      fetchStats();
+    }, 10000);
 
     return () => {
-      console.log("Cleaning up subscription");
-      supabase.removeChannel(subscription);
+      clearInterval(pollInterval);
     };
-  }, [user?.role, connectionTested]);
-
-  const getDateRange = () => {
-    const now = new Date();
-    const todayStart = new Date(now.setHours(0, 0, 0, 0)).toISOString();
-    const todayEnd = new Date(now.setHours(23, 59, 59, 999)).toISOString();
-    return { todayStart, todayEnd };
-  };
+  }, [user?.role]);
 
   const handleStatusChange = () => {
-    fetchStats(user?.role || "");
+    if (user?.role) {
+      fetchStats();
+    }
   };
 
-  const fetchStats = async (role: string) => {
-    console.log(`Fetching stats for role: ${role}`);
+  const fetchStats = async () => {
     try {
       const localToday = new Date();
       localToday.setHours(0, 0, 0, 0);
@@ -124,566 +76,180 @@ export function Dashboard() {
         localTomorrow.getTime() - localTomorrow.getTimezoneOffset() * 60000
       ).toISOString();
 
-      console.log("Date filters:", {
-        localToday,
-        utcTodayStart,
-        utcTomorrowStart,
+      // Fetch stats from API
+      const response = await api.getVisitStats({
+        startDate: utcTodayStart,
+        endDate: utcTomorrowStart,
       });
 
-      let statsData: StatItem[] = [];
-
-      switch (role) {
-        case "admin": {
-          console.log("Fetching admin stats...");
-
-          const { count: totalUsers, error: usersError } = await supabase
-            .from("hosts")
-            .select("*", { count: "exact", head: true });
-
-          if (usersError) {
-            console.error("Users count error:", usersError);
-            throw usersError;
-          }
-
-          const [
-            { count: approvedToday, error: approvedError },
-            { count: newRequestsToday, error: newRequestsError },
-            { count: completedToday, error: completedError },
-            { count: cancelledToday, error: cancelledError },
-          ] = await Promise.all([
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.APPROVED)
-              .gte("approved_at", utcTodayStart)
-              .lt("approved_at", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.PENDING)
-              .gte("created_at", utcTodayStart)
-              .lt("created_at", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.COMPLETED)
-              .gte("check_out_time", utcTodayStart)
-              .lt("check_out_time", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.CANCELLED),
-          ]);
-
-          const errors = [
-            approvedError,
-            newRequestsError,
-            completedError,
-            cancelledError,
-          ].filter(Boolean);
-          if (errors.length > 0) {
-            console.error("Visit stats errors:", errors);
-            throw errors[0];
-          }
-
-          console.log("Admin stats results:", {
-            totalUsers,
-            approvedToday,
-            newRequestsToday,
-            completedToday,
-            cancelledToday,
-          });
-
-          statsData = [
-            {
-              name: "Total Users",
-              value: totalUsers ?? 0,
-              icon: Users,
-              color: "text-blue-500",
-              bgColor: "bg-blue-50",
-            },
-            {
-              name: "Approved Visits",
-              value: approvedToday ?? 0,
-              icon: UserCheck,
-              color: "text-green-500",
-              bgColor: "bg-green-50",
-              status: VISIT_STATUS.APPROVED,
-            },
-            {
-              name: "New Visit Requests",
-              value: newRequestsToday ?? 0,
-              icon: AlertCircle,
-              color: "text-yellow-500",
-              bgColor: "bg-yellow-50",
-              status: VISIT_STATUS.PENDING,
-            },
-            {
-              name: "Completed Visits",
-              value: completedToday ?? 0,
-              icon: CheckCircle,
-              color: "text-indigo-500",
-              bgColor: "bg-indigo-50",
-              status: VISIT_STATUS.COMPLETED,
-            },
-            {
-              name: "Cancelled Visits",
-              value: cancelledToday ?? 0,
-              icon: XCircle,
-              color: "text-red-500",
-              bgColor: "bg-red-50",
-              status: VISIT_STATUS.CANCELLED,
-            },
-          ];
-          break;
-        }
-
-        case "guard": {
-          console.log("Fetching guard stats...");
-
-          const [
-            { count: approvedToday },
-            { count: newRequestsToday },
-            { count: completedToday },
-            { count: cancelledToday },
-          ] = await Promise.all([
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.APPROVED)
-              .gte("approved_at", utcTodayStart)
-              .lt("approved_at", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.PENDING)
-              .gte("created_at", utcTodayStart)
-              .lt("created_at", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.COMPLETED)
-              .gte("check_out_time", utcTodayStart)
-              .lt("check_out_time", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("status", VISIT_STATUS.CANCELLED),
-          ]);
-
-          statsData = [
-            {
-              name: "Approved Visits",
-              value: approvedToday ?? 0,
-              icon: UserCheck,
-              color: "text-green-500",
-              bgColor: "bg-green-50",
-              status: VISIT_STATUS.APPROVED,
-            },
-            {
-              name: "New Visit Requests",
-              value: newRequestsToday ?? 0,
-              icon: AlertCircle,
-              color: "text-yellow-500",
-              bgColor: "bg-yellow-50",
-              status: VISIT_STATUS.PENDING,
-            },
-            {
-              name: "Completed Visits",
-              value: completedToday ?? 0,
-              icon: CheckCircle,
-              color: "text-indigo-500",
-              bgColor: "bg-indigo-50",
-              status: VISIT_STATUS.COMPLETED,
-            },
-            {
-              name: "Cancelled Visits",
-              value: cancelledToday ?? 0,
-              icon: XCircle,
-              color: "text-red-500",
-              bgColor: "bg-red-50",
-              status: VISIT_STATUS.CANCELLED,
-            },
-          ];
-          break;
-        }
-
-        case "resident": {
-          const userId = user?.id;
-          if (!userId) {
-            console.error("No user ID available for resident");
-            return;
-          }
-
-          console.log(`Fetching resident stats for user ID: ${userId}`);
-
-          const [
-            { count: approvedToday },
-            { count: newRequestsToday },
-            { count: completedToday },
-            { count: cancelledToday },
-          ] = await Promise.all([
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("host_id", userId)
-              .eq("status", VISIT_STATUS.APPROVED)
-              .gte("approved_at", utcTodayStart)
-              .lt("approved_at", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("host_id", userId)
-              .eq("status", VISIT_STATUS.PENDING)
-              .gte("created_at", utcTodayStart)
-              .lt("created_at", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("host_id", userId)
-              .eq("status", VISIT_STATUS.COMPLETED)
-              .gte("check_out_time", utcTodayStart)
-              .lt("check_out_time", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("host_id", userId)
-              .eq("status", VISIT_STATUS.CANCELLED),
-          ]);
-
-          statsData = [
-            {
-              name: "Approved Visits",
-              value: approvedToday ?? 0,
-              icon: UserCheck,
-              color: "text-green-500",
-              bgColor: "bg-green-50",
-              status: VISIT_STATUS.APPROVED,
-            },
-            {
-              name: "New Visit Requests",
-              value: newRequestsToday ?? 0,
-              icon: AlertCircle,
-              color: "text-yellow-500",
-              bgColor: "bg-yellow-50",
-              status: VISIT_STATUS.PENDING,
-            },
-            {
-              name: "Completed Visits",
-              value: completedToday ?? 0,
-              icon: CheckCircle,
-              color: "text-indigo-500",
-              bgColor: "bg-indigo-50",
-              status: VISIT_STATUS.COMPLETED,
-            },
-            {
-              name: "Cancelled Visits",
-              value: cancelledToday ?? 0,
-              icon: XCircle,
-              color: "text-red-500",
-              bgColor: "bg-red-50",
-              status: VISIT_STATUS.CANCELLED,
-            },
-          ];
-          break;
-        }
-
-        case "visitor": {
-          const visitorId = user?.id;
-          if (!visitorId) {
-            console.error("No user ID available for visitor");
-            return;
-          }
-
-          console.log(`Fetching visitor stats for visitor ID: ${visitorId}`);
-
-          const [
-            { count: approvedToday },
-            { count: newRequestsToday },
-            { count: completedToday },
-            { count: cancelledToday },
-          ] = await Promise.all([
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("visitor_id", visitorId)
-              .eq("status", VISIT_STATUS.APPROVED)
-              .gte("approved_at", utcTodayStart)
-              .lt("approved_at", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("visitor_id", visitorId)
-              .eq("status", VISIT_STATUS.PENDING)
-              .gte("created_at", utcTodayStart)
-              .lt("created_at", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("visitor_id", visitorId)
-              .eq("status", VISIT_STATUS.COMPLETED)
-              .gte("check_out_time", utcTodayStart)
-              .lt("check_out_time", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("visitor_id", visitorId)
-              .eq("status", VISIT_STATUS.CANCELLED),
-          ]);
-
-          statsData = [
-            {
-              name: "Approved Visits",
-              value: approvedToday ?? 0,
-              icon: UserCheck,
-              color: "text-green-500",
-              bgColor: "bg-green-50",
-              status: VISIT_STATUS.APPROVED,
-            },
-            {
-              name: "New Visit Requests",
-              value: newRequestsToday ?? 0,
-              icon: AlertCircle,
-              color: "text-yellow-500",
-              bgColor: "bg-yellow-50",
-              status: VISIT_STATUS.PENDING,
-            },
-            {
-              name: "Completed Visits",
-              value: completedToday ?? 0,
-              icon: CheckCircle,
-              color: "text-indigo-500",
-              bgColor: "bg-indigo-50",
-              status: VISIT_STATUS.COMPLETED,
-            },
-            {
-              name: "Cancelled Visits",
-              value: cancelledToday ?? 0,
-              icon: XCircle,
-              color: "text-red-500",
-              bgColor: "bg-red-50",
-              status: VISIT_STATUS.CANCELLED,
-            },
-          ];
-          break;
-        }
-
-        case "entity": {
-          const userId = user?.id;
-          if (!userId) {
-            console.error("No user ID available for entity");
-            return;
-          }
-
-          console.log(`Fetching entity stats for user ID: ${userId}`);
-
-          const [
-            { count: approvedToday },
-            { count: newRequestsToday },
-            { count: completedToday },
-            { count: cancelledToday },
-          ] = await Promise.all([
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("entity_id", userId)
-              .eq("status", VISIT_STATUS.APPROVED)
-              .gte("approved_at", utcTodayStart)
-              .lt("approved_at", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("entity_id", userId)
-              .eq("status", VISIT_STATUS.PENDING)
-              .gte("created_at", utcTodayStart)
-              .lt("created_at", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("entity_id", userId)
-              .eq("status", VISIT_STATUS.COMPLETED)
-              .gte("check_out_time", utcTodayStart)
-              .lt("check_out_time", utcTomorrowStart),
-
-            supabase
-              .from("visits")
-              .select("*", { count: "exact", head: true })
-              .eq("entity_id", userId)
-              .eq("status", VISIT_STATUS.CANCELLED),
-          ]);
-
-          statsData = [
-            {
-              name: "Approved Visits",
-              value: approvedToday ?? 0,
-              icon: UserCheck,
-              color: "text-green-500",
-              bgColor: "bg-green-50",
-              status: VISIT_STATUS.APPROVED,
-            },
-            {
-              name: "New Visit Requests",
-              value: newRequestsToday ?? 0,
-              icon: AlertCircle,
-              color: "text-yellow-500",
-              bgColor: "bg-yellow-50",
-              status: VISIT_STATUS.PENDING,
-            },
-            {
-              name: "Completed Visits",
-              value: completedToday ?? 0,
-              icon: CheckCircle,
-              color: "text-indigo-500",
-              bgColor: "bg-indigo-50",
-              status: VISIT_STATUS.COMPLETED,
-            },
-            {
-              name: "Cancelled Visits",
-              value: cancelledToday ?? 0,
-              icon: XCircle,
-              color: "text-red-500",
-              bgColor: "bg-red-50",
-              status: VISIT_STATUS.CANCELLED,
-            },
-          ];
-          break;
-        }
-
-        default:
-          console.warn("Unknown role:", role);
-          statsData = [];
+      if (response.error) {
+        throw new Error(response.error);
       }
+
+      const apiStats = response.data;
+      
+      // Common stats configuration based on cleaned up requirement
+      // Showing only relevant actionable stats
+      const statsData: StatItem[] = [
+        {
+          name: "Pending Requests",
+          value: apiStats.pending ?? 0,
+          icon: AlertCircle,
+          color: "text-amber-600",
+          bgColor: "bg-amber-50",
+          borderColor: "border-amber-200",
+          status: VISIT_STATUS.PENDING,
+          description: "Awaiting approval",
+        },
+        {
+          name: "Expected Visitors",
+          value: apiStats.approved ?? 0,
+          icon: UserCheck,
+          color: "text-emerald-600",
+          bgColor: "bg-emerald-50",
+          borderColor: "border-emerald-200",
+          status: VISIT_STATUS.APPROVED,
+          description: "Approved for today",
+        },
+        {
+          name: "Checked In / Completed",
+          value: apiStats.completed ?? 0,
+          icon: CheckCircle,
+          color: "text-blue-600",
+          bgColor: "bg-blue-50",
+          borderColor: "border-blue-200",
+          status: VISIT_STATUS.COMPLETED,
+          description: "Visits completed",
+        },
+        {
+          name: "Denied Visits",
+          value: apiStats.denied ?? 0,
+          icon: XCircle,
+          color: "text-rose-600",
+          bgColor: "bg-rose-50",
+          borderColor: "border-rose-200",
+          status: VISIT_STATUS.DENIED,
+          description: "Rejected today",
+        }
+      ];
 
       setStats(statsData);
+      setConnectionError(null);
     } catch (err: any) {
       console.error("⚠️ Error fetching stats:", err.message);
-      console.error("Error details:", err);
-
-      try {
-        console.log("Attempting fallback simple query...");
-        const { data, error } = await supabase
-          .from("visits")
-          .select("id, status")
-          .limit(5);
-
-        console.log("Fallback query result:", data);
-        console.log("Fallback query error:", error);
-      } catch (fallbackErr) {
-        console.error("Even fallback query failed:", fallbackErr);
-      }
+      setConnectionError(err.message || "Failed to fetch stats");
     }
   };
 
   const handleStatCardClick = async (status: string) => {
     setSelectedStatus(status);
     try {
-      const { todayStart, todayEnd } = getDateRange();
-      let query = supabase
-        .from("visits")
-        .select(
-          `
-          *,
-          visitors:visitor_id (name),
-          hosts:host_id (name)
-        `
-        )
-        .eq("status", status);
+      const localToday = new Date();
+      localToday.setHours(0, 0, 0, 0);
+      const todayStart = new Date(
+        localToday.getTime() - localToday.getTimezoneOffset() * 60000
+      ).toISOString();
 
-      if (status === "pending") {
-        query = query.gte("created_at", todayStart).lte("created_at", todayEnd);
-      } else if (status === "approved") {
-        query = query.or(
-          `and(approved_at.gte.${todayStart},approved_at.lte.${todayEnd}),approved_at.is.null`
-        );
+      const localTomorrow = new Date(localToday);
+      localTomorrow.setDate(localToday.getDate() + 1);
+      const todayEnd = new Date(
+        localTomorrow.getTime() - localTomorrow.getTimezoneOffset() * 60000
+      ).toISOString();
+
+      // Fetch visits by status
+      const response = await api.getVisits({
+        status,
+        startDate: todayStart,
+        endDate: todayEnd,
+      });
+
+      if (response.error) {
+        throw new Error(response.error);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-
-      const transformedData =
-        data?.map((visit) => ({
-          ...visit,
-          visitor_name: visit.visitors?.name || "Unknown Visitor",
-          host_name: visit.hosts?.name || "Unknown Host",
-        })) || [];
-
-      setSelectedVisits(transformedData);
+      const visits = response.data?.visits || [];
+      setSelectedVisits(visits);
       setIsModalOpen(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching visits:", error);
+      setConnectionError(error.message || "Failed to fetch visits");
     }
   };
 
+  const currentDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Welcome back, {user?.name || "Guest"}
-        </h1>
-        <p className="mt-2 text-md text-gray-600">
-          Here's what's happening in your campus today
-        </p>
-        {connectionError && (
-          <div className="mt-4 p-3 bg-red-100 border border-red-200 text-red-700 rounded-lg flex items-center">
-            <AlertCircle className="h-5 w-5 mr-2" />
-            <span>Connection issue detected: {connectionError}</span>
-          </div>
-        )}
+    <div className="space-y-8">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Welcome back, <span className="text-sky-600">{user?.name || "Administrator"}</span>
+          </h1>
+          <p className="mt-1 text-slate-500">
+            Here's your daily visitor activity overview.
+          </p>
+        </div>
+        <div className="mt-4 md:mt-0 flex items-center gap-2 text-sm font-medium text-slate-600 bg-slate-50 px-4 py-2 rounded-lg border border-slate-200">
+          <Calendar className="h-4 w-4 text-sky-600" />
+          {currentDate}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      {connectionError && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center">
+          <AlertCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+          <span>Connection issue: {connectionError}</span>
+        </div>
+      )}
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat) => (
           <div
             key={stat.name}
-            className={`bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-300 ${
-              stat.status ? "cursor-pointer" : ""
-            }`}
+            className={`group relative overflow-hidden bg-white rounded-2xl p-6 shadow-sm border transition-all duration-300 ${
+              stat.status ? "cursor-pointer hover:shadow-md hover:-translate-y-1" : ""
+            } ${stat.borderColor}`}
             onClick={() => stat.status && handleStatCardClick(stat.status)}
-            aria-label={
-              stat.status ? `View ${stat.name.toLowerCase()}` : undefined
-            }
+            role="button"
             tabIndex={stat.status ? 0 : undefined}
           >
-            <div className="p-6">
-              <div className="flex items-center">
-                <div className={`p-3 rounded-lg ${stat.bgColor}`}>
-                  <stat.icon
-                    className={`h-6 w-6 ${stat.color}`}
-                    aria-hidden="true"
-                  />
+            <div className="relative z-10">
+              <div className="flex justify-between items-start mb-4">
+                <div className={`p-3 rounded-xl ${stat.bgColor}`}>
+                  <stat.icon className={`h-6 w-6 ${stat.color}`} />
                 </div>
-                <div className="ml-4">
-                  <h3 className="text-sm font-medium text-gray-600">
-                    {stat.name}
-                  </h3>
-                  <p className="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-                    {stat.value}
-                  </p>
-                </div>
+                {stat.status === VISIT_STATUS.PENDING && (Number(stat.value) > 0) && (
+                  <span className="flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                  </span>
+                )}
+              </div>
+              
+              <div className="space-y-1">
+                <p className="text-4xl font-bold text-slate-900 tracking-tight">
+                  {stat.value}
+                </p>
+                <h3 className="text-sm font-medium text-slate-600 uppercase tracking-wider">
+                  {stat.name}
+                </h3>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-slate-50 flex items-center text-xs text-slate-400 font-medium">
+                <Clock className="h-3.5 w-3.5 mr-1.5" />
+                {stat.description}
               </div>
             </div>
-            <div
-              className={`px-6 py-2 bg-gray-50 rounded-b-xl border-t border-gray-100`}
-            >
-              <div className="flex items-center text-xs text-gray-500">
-                <TrendingUp className="h-3 w-3 mr-1" />
-                <span>Today</span>
-              </div>
-            </div>
+            
+            {/* Background Decoration */}
+            <div className={`absolute -right-6 -bottom-6 w-24 h-24 rounded-full opacity-10 group-hover:scale-125 transition-transform duration-500 ${stat.bgColor.replace('bg-', 'bg-')}`} />
           </div>
         ))}
       </div>

@@ -1,36 +1,39 @@
-import { useEffect, useState } from 'react';
-import { format } from 'date-fns';
-import { CheckCircle, XCircle, Search } from 'lucide-react';
-import { toast } from 'react-hot-toast';
-import { supabase } from '../lib/supabase';
-import type { Database } from '../lib/database.types';
-import QRCode from 'qrcode';
-import emailjs from '@emailjs/browser';
+import { useEffect, useState } from "react";
+import { format } from "date-fns";
+import { CheckCircle, XCircle, Search } from "lucide-react";
+import { toast } from "react-hot-toast";
+import { api } from "../lib/api";
+import QRCode from "qrcode";
+import emailjs from "@emailjs/browser";
 
-type Visit = Database['public']['Tables']['visits']['Row'] & {
-  visitors: Database['public']['Tables']['visitors']['Row'];
+type Visit = {
+  id: string;
+  purpose: string;
+  validUntil: string;
+  createdAt: string;
+  visitor: {
+    name: string;
+    email: string;
+  };
 };
 
 export function VisitorApproval() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
 
   const loadVisits = async () => {
     try {
-      const { data, error } = await supabase
-        .from('visits')
-        .select(
-          '*, visitors(*)'
-        )
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
+      const response = await api.getVisits({ status: "pending" });
 
-      if (error) throw error;
-      setVisits(data as Visit[]);
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      setVisits(response.data.visits || []);
     } catch (error) {
-      console.error('Error loading visits:', error);
-      toast.error('Failed to load pending visits');
+      console.error("Error loading visits:", error);
+      toast.error("Failed to load pending visits");
     } finally {
       setLoading(false);
     }
@@ -42,28 +45,26 @@ export function VisitorApproval() {
 
   const handleApproval = async (visitId: string, approved: boolean) => {
     try {
-      const { data: updatedData, error } = await supabase
-        .from('visits')
-        .update({
-          status: approved ? 'approved' : 'denied',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', visitId)
-        .select('*, visitors(*)')
-        .single();
+      const response = await api.updateVisit(visitId, {
+        status: approved ? "approved" : "denied",
+      });
 
-      if (error) throw error;
+      if (response.error) {
+        throw new Error(response.error);
+      }
 
-      toast.success(`Visit ${approved ? 'approved' : 'denied'} successfully`);
+      const updatedData = response.data;
+
+      toast.success(`Visit ${approved ? "approved" : "denied"} successfully`);
 
       if (approved && updatedData) {
         // Generate QR code data
         const qrData = JSON.stringify({
           visitId: updatedData.id,
-          name: updatedData.visitors.name,
-          email: updatedData.visitors.email,
+          name: updatedData.visitor?.name,
+          email: updatedData.visitor?.email,
           purpose: updatedData.purpose,
-          validUntil: updatedData.valid_until,
+          validUntil: updatedData.validUntil,
         });
 
         const qrUrl = await QRCode.toDataURL(qrData);
@@ -73,37 +74,41 @@ export function VisitorApproval() {
             "service_tmagvgd", // Your EmailJS Service ID
             "template_c4a4dpu", // Your EmailJS Template ID
             {
-              to_name: updatedData.visitors.name,
-              to_email: updatedData.visitors.email,
+              to_name: updatedData.visitor?.name,
+              to_email: updatedData.visitor?.email,
               qr_code: qrUrl,
               visit_id: updatedData.id,
               visit_purpose: updatedData.purpose,
-              valid_until: new Date(updatedData.valid_until).toLocaleString(),
+              valid_until: new Date(updatedData.validUntil).toLocaleString(),
             },
             "ApAlChy6Mq77wiEue" // Your EmailJS Public Key
           );
 
           if (emailResult.status === 200) {
-            toast.success('Approval email sent successfully!');
+            toast.success("Approval email sent successfully!");
           } else {
-            console.warn("Email sending failed with status:", emailResult.status);
+            console.warn(
+              "Email sending failed with status:",
+              emailResult.status
+            );
           }
         } catch (emailError) {
-          console.error('Failed to send approval email:', emailError);
+          console.error("Failed to send approval email:", emailError);
         }
       }
 
       loadVisits(); // Reload the list after action
     } catch (error) {
-      console.error('Error updating visit:', error);
-      toast.error('Failed to update visit status');
+      console.error("Error updating visit:", error);
+      toast.error("Failed to update visit status");
     }
   };
 
-  const filteredVisits = visits.filter(visit =>
-    visit.visitors.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    visit.visitors.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    visit.purpose.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredVisits = visits.filter(
+    (visit) =>
+      visit.visitor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      visit.visitor.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      visit.purpose.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) {
@@ -114,7 +119,9 @@ export function VisitorApproval() {
     <div className="px-4 sm:px-6 lg:px-8">
       <div className="sm:flex sm:items-center">
         <div className="sm:flex-auto">
-          <h1 className="text-xl font-semibold text-gray-900">Pending Visits</h1>
+          <h1 className="text-xl font-semibold text-gray-900">
+            Pending Visits
+          </h1>
           <p className="mt-2 text-sm text-gray-700">
             Review and approve pending visitor requests
           </p>
@@ -124,7 +131,9 @@ export function VisitorApproval() {
       <div className="mt-8">
         <div className="flex flex-1 items-center justify-between mb-4">
           <div className="w-full max-w-lg lg:max-w-xs">
-            <label htmlFor="search" className="sr-only">Search</label>
+            <label htmlFor="search" className="sr-only">
+              Search
+            </label>
             <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                 <Search className="h-5 w-5 text-gray-400" />
@@ -148,19 +157,34 @@ export function VisitorApproval() {
                 <table className="min-w-full divide-y divide-gray-300">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
+                      <th
+                        scope="col"
+                        className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6"
+                      >
                         Visitor
                       </th>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      <th
+                        scope="col"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                      >
                         Purpose
                       </th>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      <th
+                        scope="col"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                      >
                         Valid Until
                       </th>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      <th
+                        scope="col"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                      >
                         Requested At
                       </th>
-                      <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                      <th
+                        scope="col"
+                        className="relative py-3.5 pl-3 pr-4 sm:pr-6"
+                      >
                         <span className="sr-only">Actions</span>
                       </th>
                     </tr>
@@ -169,17 +193,21 @@ export function VisitorApproval() {
                     {filteredVisits.map((visit) => (
                       <tr key={visit.id}>
                         <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
-                          <div className="font-medium text-gray-900">{visit.visitors.name}</div>
-                          <div className="text-gray-500">{visit.visitors.email}</div>
+                          <div className="font-medium text-gray-900">
+                            {visit.visitor.name}
+                          </div>
+                          <div className="text-gray-500">
+                            {visit.visitor.email}
+                          </div>
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                           {visit.purpose}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          {format(new Date(visit.valid_until), 'PPp')}
+                          {format(new Date(visit.validUntil), "PPp")}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          {format(new Date(visit.created_at), 'PPp')}
+                          {format(new Date(visit.createdAt), "PPp")}
                         </td>
                         <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                           <button

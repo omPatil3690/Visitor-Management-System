@@ -3,6 +3,10 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+        display: ['"Plus Jakarta Sans"', 'sans-serif'],
+      },
       colors: {
         primary: {
           50: '#f0f9ff',
@@ -17,9 +21,23 @@ export default {
           900: '#0c4a6e',
         },
       },
+      animation: {
+        'spin-slow': 'spin 12s linear infinite',
+      },
     },
   },
   plugins: [
     require('@tailwindcss/forms'),
+    function ({ addUtilities }) {
+      const newUtilities = {
+        '.perspective-1000': {
+          perspective: '1000px',
+        },
+        '.perspective-none': {
+          perspective: 'none',
+        },
+      }
+      addUtilities(newUtilities)
+    },
   ],
 };

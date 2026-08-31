@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
-import { LogOut, Menu, User, Users, Home, ClipboardList } from 'lucide-react';
+import { LogOut, Menu, User, ClipboardList, Home } from 'lucide-react';
 
 export function Layout() {
   const { user, logout } = useAuthStore();
@@ -38,25 +38,14 @@ export function Layout() {
 
             {/* Desktop Navigation */}
             <div className="hidden sm:flex sm:items-center sm:space-x-8">
-              {user?.role === 'admin' && (
-                <>
-                  <Link to="/dashboard/users" className="flex items-center px-3 py-2 text-sm font-medium text-gray-900">
-                    <Users className="h-5 w-5 mr-1" aria-hidden="true" />
-                    Users
-                  </Link>
-                  <Link to="/dashboard/logs" className="flex items-center px-3 py-2 text-sm font-medium text-gray-900">
-                    <ClipboardList className="h-5 w-5 mr-1" aria-hidden="true" />
-                    Logs
-                  </Link>
-                </>
-              )}
-
-              {user?.role === 'guard' && (
-                <Link to="/dashboard/register-visitor" className="flex items-center px-3 py-2 text-sm font-medium text-gray-900">
-                  <User className="h-5 w-5 mr-1" aria-hidden="true" />
-                  Register Visitor
-                </Link>
-              )}
+              <Link to="/dashboard/visitor" className="flex items-center px-3 py-2 text-sm font-medium text-gray-900">
+                <User className="h-5 w-5 mr-1" aria-hidden="true" />
+                Register Visitor
+              </Link>
+              <Link to="/dashboard/approval" className="flex items-center px-3 py-2 text-sm font-medium text-gray-900">
+                <ClipboardList className="h-5 w-5 mr-1" aria-hidden="true" />
+                Visitor Approval
+              </Link>
             </div>
 
             {/* Logout Button */}
@@ -81,21 +70,12 @@ export function Layout() {
           {/* Mobile Menu */}
           {isMenuOpen && (
             <div className="sm:hidden bg-white shadow-md rounded-md p-4 mt-2">
-              {user?.role === 'admin' && (
-                <>
-                  <Link to="/dashboard/users" className="block px-3 py-2 text-sm font-medium text-gray-900">
-                    Users
-                  </Link>
-                  <Link to="/dashboard/logs" className="block px-3 py-2 text-sm font-medium text-gray-900">
-                    Logs
-                  </Link>
-                </>
-              )}
-              {user?.role === 'guard' && (
-                <Link to="/dashboard/register-visitor" className="block px-3 py-2 text-sm font-medium text-gray-900">
-                  Register Visitor
-                </Link>
-              )}
+              <Link to="/dashboard/visitor" className="block px-3 py-2 text-sm font-medium text-gray-900">
+                Register Visitor
+              </Link>
+              <Link to="/dashboard/approval" className="block px-3 py-2 text-sm font-medium text-gray-900">
+                Visitor Approval
+              </Link>
               {user && (
                 <button
                   onClick={handleLogout}

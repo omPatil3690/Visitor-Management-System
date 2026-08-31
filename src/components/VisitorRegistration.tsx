@@ -1,28 +1,18 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { useForm } from "react-hook-form";
-import { Camera } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { supabase } from "../lib/supabase";
-import type { Database } from "../lib/database.types";
-import QRCode from "qrcode";
-import emailjs from "@emailjs/browser";
-import { v4 as uuidv4 } from "uuid";
+import { api } from "../lib/api";
+import { useAuthStore } from "../store/auth";
 
 type VisitorFormData = {
   name: string;
   email: string;
   phone: string;
   company: string;
-  photo?: FileList;
-
   purpose: string;
   hostEmail: string;
-  entityEmail: string; // Added field for entity email
-  checkInTime: string;
-  checkOutTime: string;
   validUntil: string;
   notes: string;
-  status?: string;
 };
 
 export function VisitorRegistration() {
@@ -32,218 +22,78 @@ export function VisitorRegistration() {
     reset,
     formState: { errors, isSubmitting },
   } = useForm<VisitorFormData>();
-  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-
-  // Get the current user session when component mounts
-  useEffect(() => {
-    async function getUserId() {
-      const { data } = await supabase.auth.getSession();
-      if (data.session?.user) {
-        setUserId(data.session.user.id);
-      }
-    }
-    getUserId();
-  }, []);
+  const { user } = useAuthStore();
 
   const onSubmit = async (formData: VisitorFormData) => {
     try {
       // Check if user is authenticated
-      if (!userId) {
+      if (!user) {
         toast.error("You must be logged in to register visitors");
         return;
       }
 
-      let photoUrl = null;
-
-      // Upload photo if provided
-      if (formData.photo?.[0]) {
-        const file = formData.photo[0];
-        const fileExt = file.name.split(".").pop();
-        const fileName = `${uuidv4()}.${fileExt}`; // Using UUID for unique filenames
-        const filePath = fileName; // Remove "visitor-photos/" prefix
-
-        // Make sure we're using the correct bucket name and have proper permissions
-        const { error: uploadError, data: uploadData } = await supabase.storage
-          .from("identification-images") // Make sure this bucket exists
-          .upload(filePath, file, {
-            cacheControl: "3600",
-            upsert: false,
-          });
-
-        if (uploadError) {
-          console.error("Photo upload error:", uploadError);
-          throw new Error(`Photo upload failed: ${uploadError.message}`);
-        }
-
-        const {
-          data: { publicUrl },
-        } = supabase.storage
-          .from("identification-images")
-          .getPublicUrl(filePath);
-
-        photoUrl = publicUrl;
-      }
-
       // Get host details
-      const { data: hostData, error: hostError } = await supabase
-        .from("hosts")
-        .select("id")
-        .eq("email", formData.hostEmail)
-        .single();
+      toast.loading('Finding host...');
+      const hostResponse = await api.searchHost(formData.hostEmail);
 
-      if (hostError) {
+      if (hostResponse.error) {
+        toast.dismiss();
         throw new Error("Host not found with email: " + formData.hostEmail);
       }
 
-      // Look up entity by email in the hosts table, if provided
-      let entityId = null;
-      if (formData.entityEmail && formData.entityEmail.trim() !== "") {
-        const { data: entityData, error: entityError } = await supabase
-          .from("hosts")
-          .select("id")
-          .eq("email", formData.entityEmail)
-          .eq("role", "entity") // Make sure we're getting an entity role
-          .maybeSingle();
+      const host = hostResponse.data;
+      toast.dismiss();
 
-        if (entityError && entityError.code !== "PGRST116") {
-          console.error("Entity lookup error:", entityError);
-          throw new Error("Error looking up entity: " + entityError.message);
-        }
+      // Step 1: Create or update visitor
+      toast.loading('Creating visitor record...');
 
-        if (entityData) {
-          entityId = entityData.id;
-        } else {
-          toast.error(
-            "No entity found with the provided email. Please make sure the entity exists in the system."
-          );
-          throw new Error(
-            "No entity found with email: " + formData.entityEmail
-          );
-        }
-      }
+      // First check if visitor exists
+      const searchResponse = await api.searchVisitor({ email: formData.email });
 
-      // Step 1: Create or find existing visitor
       let visitorId;
 
-      const { data: existingVisitor, error: visitorLookupError } =
-        await supabase
-          .from("visitors")
-          .select("id")
-          .eq("email", formData.email)
-          .maybeSingle();
-
-      if (visitorLookupError && visitorLookupError.code !== "PGRST116") {
-        throw visitorLookupError;
-      }
-
-      if (existingVisitor) {
-        visitorId = existingVisitor.id;
-
-        const { error: updateError } = await supabase
-          .from("visitors")
-          .update({
-            name: formData.name,
-            phone: formData.phone,
-            company: formData.company || null,
-            photo_url: photoUrl,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", visitorId);
-
-        if (updateError) {
-          console.error("Visitor update error:", updateError);
-          throw updateError;
-        }
+      if (searchResponse.data && !searchResponse.error) {
+        // Visitor exists, use their ID
+        visitorId = searchResponse.data.id;
+        toast.dismiss();
+        toast.success('Existing visitor found!');
       } else {
-        const { data: newVisitor, error: createError } = await supabase
-          .from("visitors")
-          .insert({
-            name: formData.name,
-            email: formData.email,
-            phone: formData.phone,
-            company: formData.company || null,
-            photo_url: photoUrl,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .select()
-          .single();
+        // Create new visitor
+        const visitorResponse = await api.createVisitor({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          company: formData.company || undefined,
+        });
 
-        if (createError) {
-          console.error("Visitor creation error:", createError);
-          throw createError;
+        if (visitorResponse.error) {
+          toast.dismiss();
+          throw new Error(visitorResponse.error);
         }
 
-        visitorId = newVisitor.id;
+        visitorId = visitorResponse.data.id;
+        toast.dismiss();
+        toast.success('Visitor record created!');
       }
 
       // Step 2: Create visit record
-      const currentTime = new Date().toISOString();
-      const visitId = uuidv4(); // Generate unique visit ID
+      toast.loading('Creating visit...');
 
-      const { error: visitError } = await supabase.from("visits").insert({
-        id: visitId,
-        visitor_id: visitorId,
-        host_id: hostData.id,
-        entity_id: entityId, // Now using the correctly looked-up entity ID
+      const visitResponse = await api.createVisit({
+        visitorId,
+        hostId: host.id,
         purpose: formData.purpose,
-        status: "pending",
-        check_in_time: formData.checkInTime
-          ? new Date(formData.checkInTime).toISOString()
-          : null,
-        check_out_time: formData.checkOutTime
-          ? new Date(formData.checkOutTime).toISOString()
-          : null,
-        valid_until: new Date(formData.validUntil).toISOString(),
-        notes: formData.notes || null,
-        created_at: currentTime,
-        updated_at: currentTime,
+        validUntil: new Date(formData.validUntil).toISOString(),
+        notes: formData.notes || undefined,
       });
 
-      if (visitError) {
-        console.error("Visit creation error:", visitError);
-        throw visitError;
+      if (visitResponse.error) {
+        toast.dismiss();
+        throw new Error(visitResponse.error);
       }
 
-      // Step 3: Generate QR code with visit info
-      const qrData = JSON.stringify({
-        visitId,
-        name: formData.name,
-        email: formData.email,
-        purpose: formData.purpose,
-        validUntil: formData.validUntil,
-        entityEmail: formData.entityEmail || null,
-      });
-
-      const qrUrl = await QRCode.toDataURL(qrData);
-      setQrImageUrl(qrUrl);
-
-      // Step 4: Send Email using EmailJS
-      try {
-        const emailResult = await emailjs.send(
-          "", // Your EmailJS Service ID
-          "", // Your EmailJS Template ID
-          {
-            to_name: formData.name,
-            to_email: formData.email,
-            qr_code: qrUrl,
-            visit_id: visitId,
-            visit_purpose: formData.purpose,
-            host_email: formData.hostEmail,
-            entity_email: formData.entityEmail || "N/A",
-            valid_until: new Date(formData.validUntil).toLocaleString(),
-          },
-          "" // Your EmailJS Public Key
-        );
-
-        if (emailResult.status !== 200) {
-          console.warn("Email sending failed with status:", emailResult.status);
-        }
-      } catch (emailError) {
-        console.error("Failed to send email:", emailError);
-        // Continue execution even if email fails
-      }
+      toast.dismiss();
+      toast.success('Visit created successfully!');
 
       toast.success("Visitor registered successfully!");
       reset();
@@ -353,35 +203,6 @@ export function VisitorRegistration() {
                       />
                     </div>
                   </div>
-
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Visitor Photo
-                    </label>
-                    <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
-                      <div className="space-y-1 text-center">
-                        <Camera className="mx-auto h-12 w-12 text-gray-400" />
-                        <div className="flex text-sm text-gray-600">
-                          <label
-                            htmlFor="photo"
-                            className="relative cursor-pointer bg-white rounded-md font-medium text-primary-600 hover:text-primary-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-500"
-                          >
-                            <span>Upload a photo</span>
-                            <input
-                              id="photo"
-                              type="file"
-                              accept="image/*"
-                              className="sr-only"
-                              {...register("photo")}
-                            />
-                          </label>
-                        </div>
-                        <p className="text-xs text-gray-500">
-                          PNG, JPG up to 10MB
-                        </p>
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
                 {/* Visit Information Section */}
@@ -432,52 +253,6 @@ export function VisitorRegistration() {
                       )}
                     </div>
 
-                    <div className="col-span-6">
-                      <label
-                        htmlFor="entityEmail"
-                        className="block text-sm font-medium text-gray-700"
-                      >
-                        Entity email
-                      </label>
-                      <input
-                        type="email"
-                        {...register("entityEmail")}
-                        className="mt-1 focus:ring-primary-500 focus:border-primary-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        Enter the email of the entity associated with this visit
-                        (optional)
-                      </p>
-                    </div>
-
-                    <div className="col-span-6 sm:col-span-3">
-                      <label
-                        htmlFor="checkInTime"
-                        className="block text-sm font-medium text-gray-700"
-                      >
-                        Check-in time
-                      </label>
-                      <input
-                        type="datetime-local"
-                        {...register("checkInTime")}
-                        className="mt-1 focus:ring-primary-500 focus:border-primary-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
-                      />
-                    </div>
-
-                    <div className="col-span-6 sm:col-span-3">
-                      <label
-                        htmlFor="checkOutTime"
-                        className="block text-sm font-medium text-gray-700"
-                      >
-                        Check-out time
-                      </label>
-                      <input
-                        type="datetime-local"
-                        {...register("checkOutTime")}
-                        className="mt-1 focus:ring-primary-500 focus:border-primary-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
-                      />
-                    </div>
-
                     <div className="col-span-6 sm:col-span-3">
                       <label
                         htmlFor="validUntil"
@@ -514,28 +289,12 @@ export function VisitorRegistration() {
                     </div>
                   </div>
                 </div>
-
-                {/* QR Code Preview */}
-                <div className="text-center">
-                  {qrImageUrl && (
-                    <div className="mt-6">
-                      <h5 className="text-md font-medium text-gray-700">
-                        Visitor's QR Code
-                      </h5>
-                      <img
-                        src={qrImageUrl}
-                        alt="QR Code"
-                        className="mx-auto mt-3"
-                      />
-                    </div>
-                  )}
-                </div>
               </div>
 
               <div className="px-4 py-3 bg-gray-50 text-right sm:px-6">
                 <button
                   type="submit"
-                  disabled={isSubmitting || !userId}
+                  disabled={isSubmitting || !user}
                   className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
                 >
                   {isSubmitting ? "Registering..." : "Register Visitor"}
@@ -548,6 +307,3 @@ export function VisitorRegistration() {
     </div>
   );
 }
-
-
-
