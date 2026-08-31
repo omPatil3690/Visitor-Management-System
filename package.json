@@ -21,6 +21,8 @@
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",
+    "@neon/config": "^1.1.0",
+    "@neon/env": "^1.1.6",
     "@neondatabase/serverless": "^1.0.2",
     "@prisma/adapter-neon": "^7.2.0",
     "@prisma/client": "^7.2.0",

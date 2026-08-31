@@ -63,7 +63,7 @@ const Home = () => {
                     <div className="bg-sky-600 rounded-lg p-1.5 transition-transform group-hover:scale-105">
                         <Building2 className="h-6 w-6 text-white" strokeWidth={2.5} />
                     </div>
-                    <span className={`text-xl font-bold tracking-tight transition-colors ${scrolled ? 'text-slate-800' : 'text-slate-800 lg:text-white'}`}>
+                    <span className={`text-xl font-bold tracking-tight transition-colors ${scrolled ? 'text-slate-800' : 'text-slate-800'}`}>
                         Campus<span className="text-sky-600">VMS</span>
                     </span>
                 </div>

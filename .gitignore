@@ -100,3 +100,4 @@ coverage/
 # ===================================
 test-*.ps1
 login-response.json
+.neon
