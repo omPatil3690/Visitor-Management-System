@@ -1,4 +1,12 @@
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3001/api');
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && (!import.meta.env.PROD || !envUrl.includes('localhost'))) {
+    return envUrl;
+  }
+  return import.meta.env.PROD ? '/api' : 'http://localhost:3001/api';
+};
+
+const API_URL = getApiUrl();
 
 interface ApiResponse<T = any> {
   data?: T;
