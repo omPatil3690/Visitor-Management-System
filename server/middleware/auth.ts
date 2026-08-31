@@ -72,7 +72,7 @@ export const optionalAuth = (
 
 export const generateToken = (user: AuthUser): string => {
   const expiresIn = process.env.JWT_EXPIRES_IN || "7d";
-  return jwt.sign(user, JWT_SECRET, { expiresIn });
+  return jwt.sign(user, JWT_SECRET, { expiresIn } as any);
 };
 
 // Role-based authorization middleware

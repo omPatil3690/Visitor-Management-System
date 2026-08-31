@@ -26,8 +26,8 @@ type VisitDetailsModalProps = {
   onClose: () => void;
   userRole?: string;
   userId?: string;
-  visits: Visit[];
-  onStatusChange: () => void;
+  visits?: Visit[];
+  onStatusChange?: () => void;
 };
 
 export function VisitDetailsModal({
@@ -36,8 +36,8 @@ export function VisitDetailsModal({
   onClose,
   userRole,
   userId,
-  visits,
-  onStatusChange,
+  visits = [],
+  onStatusChange = () => {},
 }: VisitDetailsModalProps) {
   const [loading, setLoading] = useState(false);
   const [currentVisit, setCurrentVisit] = useState<Visit | null>(null);
